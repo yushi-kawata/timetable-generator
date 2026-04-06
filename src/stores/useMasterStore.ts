@@ -3,8 +3,9 @@ import { persist } from 'zustand/middleware';
 import type { TimetableTemplate, StudentRecord } from '../types/master';
 import { DEFAULT_TT } from '../types/master';
 
-// GAS WebApp URL — GASデプロイ後にここを書き換える
-const GAS_URL = localStorage.getItem('gas_url') || '';
+// GAS WebApp URL
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwW8j8jnGDBD8PKO_EEfCOFikdhkoSiFcGlRVi0hSU99fQ2xC0D2C_MLCwqIQmIUc7R/exec';
+const GAS_URL = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
 
 async function gasGet(action: string) {
   if (!GAS_URL) return null;
