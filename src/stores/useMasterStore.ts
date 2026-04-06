@@ -10,7 +10,7 @@ const GAS_URL = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
 async function gasGet(action: string) {
   if (!GAS_URL) return null;
   try {
-    const res = await fetch(`${GAS_URL}?action=${action}`);
+    const res = await fetch(`${GAS_URL}?action=${action}`, { redirect: 'follow' });
     return res.json();
   } catch { return null; }
 }
@@ -18,7 +18,12 @@ async function gasGet(action: string) {
 async function gasPost(body: unknown) {
   if (!GAS_URL) return;
   try {
-    await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(body) });
+    await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(body),
+    });
   } catch {}
 }
 
