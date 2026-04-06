@@ -40,9 +40,10 @@ export default function StudentPage() {
   const weekKey = getWeekKey(new Date());
 
   const toggleDay = (day: DayOfWeek) => {
-    setSelectedDays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
-    );
+    setSelectedDays((prev) => {
+      const next = prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day];
+      return DAYS.filter((d) => next.includes(d));
+    });
   };
 
   const selectRoom = (day: DayOfWeek, period: number, room: string) => {

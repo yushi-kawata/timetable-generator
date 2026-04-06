@@ -4,9 +4,10 @@ import { DAYS, ROOMS, PERIODS } from '../../types/master';
 import type { DayOfWeek } from '../../types/master';
 
 export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
-  const { tt, updateTTCell, saveTT } = useAppStore();
+  const { tt, updateTTCell, saveTT, gasUrl, setGasUrl } = useAppStore();
   const [editDay, setEditDay] = useState<DayOfWeek>('月');
   const [saved, setSaved] = useState(false);
+  const [urlInput, setUrlInput] = useState(gasUrl);
 
   const handleSave = async () => {
     await saveTT();
@@ -20,6 +21,34 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
         <button onClick={goTeacher} className="btn-sub text-xs">📋 申告一覧を見る</button>
       </div>
 
+      {/* GAS URL設定 */}
+      <div className="card">
+        <div className="card-title">🔗 データ共有設定（Google Apps Script）</div>
+        <p className="text-xs text-[var(--ink3)] mb-3">
+          GASのウェブアプリURLを設定すると、全端末でデータを共有できます。
+          未設定の場合はこの端末のみにデータが保存されます。
+        </p>
+        <div className="flex gap-2 items-center flex-wrap">
+          <input
+            type="text"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            placeholder="https://script.google.com/macros/s/xxxxx/exec"
+            className="form-input flex-1 !max-w-none text-xs"
+          />
+          <button
+            onClick={() => setGasUrl(urlInput.trim())}
+            className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg font-bold text-xs"
+          >
+            保存
+          </button>
+        </div>
+        {gasUrl && (
+          <div className="text-xs text-[var(--green)] mt-2 font-semibold">✅ GAS連携中</div>
+        )}
+      </div>
+
+      {/* 時間割編集 */}
       <div className="card">
         <div className="card-title">✏️ 時間割の編集</div>
         <div className="flex gap-3 items-center mb-4 flex-wrap">

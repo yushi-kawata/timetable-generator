@@ -23,7 +23,7 @@ function weekLabel(key: string): string {
 }
 
 export default function TeacherPage() {
-  const { records, deleteRecord, clearRecords } = useAppStore();
+  const { records, deleteRecord, clearRecords, fetchAll } = useAppStore();
   const [filterWeek, setFilterWeek] = useState('');
   const [filterDay, setFilterDay] = useState('');
   const [filterRoom, setFilterRoom] = useState('');
@@ -77,6 +77,7 @@ export default function TeacherPage() {
       <div className="card">
         <div className="card-title">📋 申告一覧・出席管理</div>
         <div className="flex gap-2 flex-wrap items-center mb-4">
+          <button onClick={() => fetchAll()} className="btn-sub text-xs">🔄 最新に更新</button>
           <select value={filterWeek} onChange={(e) => setFilterWeek(e.target.value)} className="sel-ctrl">
             <option value="">全週</option>
             {weeks.map((w) => <option key={w} value={w}>{weekLabel(w)}</option>)}

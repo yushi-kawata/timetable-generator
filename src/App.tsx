@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import StudentPage from './components/student/StudentPage';
 import TeacherPage from './components/teacher/TeacherPage';
 import AdminPage from './components/admin/AdminPage';
+import { useAppStore } from './stores/useMasterStore';
 
 type Mode = 'student' | 'teacher' | 'admin';
 
 export default function App() {
+  const fetchAll = useAppStore((s) => s.fetchAll);
+
+  useEffect(() => { fetchAll(); }, []);
+
   const [mode, setMode] = useState<Mode>('student');
   const [authed, setAuthed] = useState(false);
   const [showPw, setShowPw] = useState(false);
