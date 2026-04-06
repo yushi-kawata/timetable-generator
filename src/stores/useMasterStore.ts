@@ -69,8 +69,18 @@ export const useAppStore = create<AppState>()(
             gasGet('getRecs'),
             gasGet('getTT'),
           ]);
+          // 同名・同週の重複を除去（最新のみ残す）
+          const rawRecs: StudentRecord[] = Array.isArray(recs) ? recs : [];
+          const seen = new Map<string, StudentRecord>();
+          for (const r of rawRecs) {
+            const key = `${r.name}__${r.week}`;
+            const existing = seen.get(key);
+            if (!existing || r.id > existing.id) {
+              seen.set(key, r);
+            }
+          }
           set({
-            records: Array.isArray(recs) ? recs : [],
+            records: [...seen.values()].sort((a, b) => b.id - a.id),
             tt: ttData && typeof ttData === 'object' && ttData['月'] ? ttData : get().tt,
             loading: false,
           });
@@ -97,7 +107,18 @@ export const useAppStore = create<AppState>()(
 
       addRecord: async (r) => {
         const record = { ...r, id: Date.now() };
-        set((s) => ({ records: [record, ...s.records] }));
+        // 同名・同週の既存レコードを削除（上書き）
+        const old = get().records.filter(
+          (x) => x.name === record.name && x.week === record.week
+        );
+        for (const o of old) {
+          await gasPost({ action: 'deleteRec', id: o.id });
+        }
+        set((s) => ({
+          records: [record, ...s.records.filter(
+            (x) => !(x.name === record.name && x.week === record.week)
+          )],
+        }));
         await gasPost({ action: 'saveRec', data: record });
       },
 

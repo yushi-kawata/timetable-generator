@@ -110,12 +110,14 @@ export default function StudentPage() {
                 {DAY_ICONS[day]} {day}曜日
               </div>
               {/* SHR */}
-              <div className="grid grid-cols-[58px_1fr] border-t border-[var(--border)] bg-amber-50">
-                <div className="p-1.5 text-center text-[9px] text-amber-700 font-bold border-r border-[var(--border)] bg-amber-100 flex flex-col items-center justify-center">
-                  <span>SHR</span>
-                  <span className="font-mono text-[8px]">9:20〜9:30</span>
+              <div className="grid grid-cols-[58px_1fr] border-t border-[var(--border)] hover:bg-[var(--surface2)]">
+                <div className="p-1.5 text-center bg-[var(--surface2)] border-r border-[var(--border)] flex flex-col items-center justify-center">
+                  <span className="text-xs font-bold text-[var(--ink2)]">SHR</span>
+                  <span className="font-mono text-[8px] text-[var(--ink3)]">9:20〜9:30</span>
                 </div>
-                <div className="p-1.5 text-xs font-semibold text-amber-700 flex items-center">ショートホームルーム</div>
+                <div className="p-2 flex flex-col justify-center">
+                  <div className="text-[13px] font-semibold">ホームルーム</div>
+                </div>
               </div>
               {[1, 2, 3, 4, 5].map((i) => {
                 const p = PERIODS[i];
