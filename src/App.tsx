@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import StudentPage from './components/student/StudentPage';
 import TeacherPage from './components/teacher/TeacherPage';
 import AdminPage from './components/admin/AdminPage';
+import HealthCheckPage from './components/health/HealthCheckPage';
 import { useAppStore } from './stores/useMasterStore';
 
-type Mode = 'student' | 'teacher' | 'admin';
+type Mode = 'student' | 'teacher' | 'admin' | 'health';
 
 export default function App() {
   const fetchAll = useAppStore((s) => s.fetchAll);
@@ -52,14 +53,16 @@ export default function App() {
             className={`text-[11px] font-bold px-3 py-1 rounded-full tracking-wide ${
               mode === 'student'
                 ? 'bg-green-400 text-green-900'
-                : 'bg-amber-400 text-amber-900'
+                : mode === 'health'
+                  ? 'bg-rose-400 text-rose-900'
+                  : 'bg-amber-400 text-amber-900'
             }`}
           >
-            {mode === 'student' ? '生徒用' : '教員用'}
+            {mode === 'student' ? '生徒用' : mode === 'health' ? '健康観察' : '教員用'}
           </span>
         </div>
         <div className="flex gap-3 text-sm">
-          {mode !== 'student' && (
+          {mode !== 'student' && mode !== 'health' && (
             <button
               onClick={() => setMode('student')}
               className="text-white/60 hover:text-white"
@@ -67,12 +70,36 @@ export default function App() {
               ← 生徒用に戻る
             </button>
           )}
-          {mode === 'student' && (
+          {mode === 'health' && (
             <button
-              onClick={handleAdminClick}
+              onClick={() => setMode('student')}
               className="text-white/60 hover:text-white"
             >
-              教員用ページ →
+              ← 戻る
+            </button>
+          )}
+          {mode === 'student' && (
+            <>
+              <button
+                onClick={() => setMode('health')}
+                className="text-white/60 hover:text-white"
+              >
+                🏥 健康観察
+              </button>
+              <button
+                onClick={handleAdminClick}
+                className="text-white/60 hover:text-white"
+              >
+                教員用ページ →
+              </button>
+            </>
+          )}
+          {(mode === 'teacher' || mode === 'admin') && (
+            <button
+              onClick={() => setMode('health')}
+              className="text-white/60 hover:text-white"
+            >
+              🏥 健康観察
             </button>
           )}
         </div>
@@ -123,6 +150,7 @@ export default function App() {
         {mode === 'student' && <StudentPage />}
         {mode === 'teacher' && <TeacherPage />}
         {mode === 'admin' && <AdminPage goTeacher={() => setMode('teacher')} />}
+        {mode === 'health' && <HealthCheckPage isTeacher={authed} />}
       </main>
     </div>
   );
