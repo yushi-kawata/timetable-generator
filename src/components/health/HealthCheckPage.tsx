@@ -10,6 +10,7 @@ type HealthRecord = {
   condition: string;
   attendance: string;
   arrivalTime: string;
+  remarks: string;
   recorder: string;
   recordedAt: string;
 };
@@ -180,7 +181,7 @@ function InputTab() {
   const [date] = useState(todayStr);
   const [students, setStudents] = useState<string[]>([]);
   const [records, setRecords] = useState<HealthRecord[]>([]);
-  const [form, setForm] = useState<Record<string, { condition: string; attendance: string; arrivalTime: string }>>({});
+  const [form, setForm] = useState<Record<string, { condition: string; attendance: string; arrivalTime: string; remarks: string }>>({});
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -210,8 +211,8 @@ function InputTab() {
     students.forEach((name) => {
       const existing = records.find((r) => r.name === name);
       init[name] = existing
-        ? { condition: existing.condition, attendance: existing.attendance, arrivalTime: existing.arrivalTime }
-        : { condition: '良好', attendance: '出席', arrivalTime: '' };
+        ? { condition: existing.condition, attendance: existing.attendance, arrivalTime: existing.arrivalTime, remarks: existing.remarks || '' }
+        : { condition: '', attendance: '', arrivalTime: '', remarks: '' };
     });
     setForm(init);
     setSaved(false);
@@ -228,6 +229,7 @@ function InputTab() {
       condition: data.condition,
       attendance: data.attendance,
       arrivalTime: data.arrivalTime,
+      remarks: data.remarks || '',
     }));
     await gasPost({ action: 'submit', date, records: recordsData, recorder: '保健委員' });
     setSaved(true);
@@ -278,8 +280,9 @@ function InputTab() {
         <>
           <div className="space-y-2">
             {students.map((name, i) => {
-              const d = form[name] || { condition: '良好', attendance: '出席', arrivalTime: '' };
+              const d = form[name] || { condition: '', attendance: '', arrivalTime: '', remarks: '' };
               const hasRecord = records.some((r) => r.name === name);
+              const needsRemarks = d.attendance === '欠席' || d.attendance === '遅刻';
               return (
                 <div
                   key={name}
@@ -342,6 +345,19 @@ function InputTab() {
                       className="form-input !max-w-[130px] !py-1.5 text-sm"
                     />
                   </div>
+
+                  {/* 備考欄（欠席・遅刻の場合のみ） */}
+                  {needsRemarks && (
+                    <div className="mt-3 pl-9">
+                      <input
+                        type="text"
+                        placeholder={d.attendance === '遅刻' ? '遅刻の理由を入力' : '欠席の理由を入力'}
+                        value={d.remarks}
+                        onChange={(e) => update(name, 'remarks', e.target.value)}
+                        className="form-input !max-w-none w-full !py-2 text-sm"
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -457,7 +473,7 @@ function ListTab() {
               <thead>
                 <tr>
                   <th>No.</th><th>生徒名</th><th>体調</th><th>出欠</th>
-                  <th>登校時間</th><th>記録者</th><th>状態</th>
+                  <th>備考</th><th>登校時間</th><th>記録者</th><th>状態</th>
                 </tr>
               </thead>
               <tbody>
@@ -485,6 +501,7 @@ function ListTab() {
                           }`}>{rec.attendance}</span>
                         ) : <span className="text-[var(--ink3)]">—</span>}
                       </td>
+                      <td className="text-sm">{rec?.remarks || <span className="text-[var(--ink3)]">—</span>}</td>
                       <td className="text-sm">{rec?.arrivalTime || <span className="text-[var(--ink3)]">—</span>}</td>
                       <td className="text-[11px] text-[var(--ink3)]">{rec?.recorder || '—'}</td>
                       <td>
