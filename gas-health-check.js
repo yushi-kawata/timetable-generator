@@ -94,8 +94,9 @@ function getRecords(dateStr) {
         condition: data[i][2],
         attendance: data[i][3],
         arrivalTime: data[i][4],
-        recorder: data[i][5],
-        recordedAt: data[i][6],
+        remarks: data[i][5] || '',
+        recorder: data[i][6],
+        recordedAt: data[i][7],
       });
     }
   }
@@ -125,7 +126,7 @@ function submitRecords(body) {
 
   // 新しいレコードを追加
   records.forEach(r => {
-    sheet.appendRow([date, r.name, r.condition, r.attendance, r.arrivalTime, recorder, now]);
+    sheet.appendRow([date, r.name, r.condition, r.attendance, r.arrivalTime, r.remarks || '', recorder, now]);
   });
 
   return { success: true, count: records.length };
