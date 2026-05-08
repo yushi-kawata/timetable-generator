@@ -199,26 +199,32 @@ export default function StudentPage() {
         </div>
       </div>
 
-      {/* 各曜日・各時限の教室選択 */}
+      {/* 各曜日・各時限の教室選択（グリッド） */}
       {selectedDays.length > 0 && (
         <div className="mb-5">
           <div className="form-label mb-2">各曜日・各時限の教室を選んでください</div>
-          <div className="space-y-3">
-            {selectedDays.map((day) => (
-              <div key={day} className="border border-[var(--border)] rounded-xl overflow-hidden animate-[fadeUp_0.3s_ease_both]">
-                <div className={`${DAY_STYLES[day].header} text-white px-3 py-2 font-bold text-sm flex items-center gap-2`}>
-                  {DAY_ICONS[day]} {day}曜日
+          <div className="border border-[var(--border)] rounded-xl overflow-hidden">
+            {/* ヘッダー：曜日 */}
+            <div className="grid border-b border-[var(--border)]"
+              style={{ gridTemplateColumns: `40px repeat(${selectedDays.length}, 1fr)` }}>
+              <div className="bg-[var(--surface2)]" />
+              {selectedDays.map((day) => (
+                <div key={day} className={`${DAY_STYLES[day].header} text-white text-center py-1.5 text-xs font-bold`}>
+                  {day}
                 </div>
-                {[1, 2, 3, 4, 5].map((i) => {
-                  const p = PERIODS[i];
+              ))}
+            </div>
+            {/* 各時限 */}
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="grid border-t border-[var(--border)]"
+                style={{ gridTemplateColumns: `40px repeat(${selectedDays.length}, 1fr)` }}>
+                <div className="bg-[var(--surface2)] flex items-center justify-center border-r border-[var(--border)]">
+                  <span className="text-[11px] font-bold text-[var(--ink2)]">{i}限</span>
+                </div>
+                {selectedDays.map((day) => {
                   const currentRoom = selections[day]?.[i] || '';
-                  const currentSubj = currentRoom ? (tt[day]?.[currentRoom]?.[i] || '') : '';
                   return (
-                    <div key={i} className="flex items-center gap-2 border-t border-[var(--border)] px-3 py-1.5">
-                      <div className="shrink-0 w-16 text-center">
-                        <span className="text-xs font-bold text-[var(--ink2)]">{p.label}</span>
-                        <span className="font-mono text-[8px] text-[var(--ink3)] ml-1">{p.time.split('〜')[0]}</span>
-                      </div>
+                    <div key={day} className="px-1 py-1 border-r border-[var(--border)] last:border-r-0">
                       <select
                         value={currentRoom}
                         onChange={(e) => {
@@ -230,21 +236,19 @@ export default function StudentPage() {
                             return next;
                           });
                         }}
-                        className={`sel-ctrl flex-1 !py-1.5 text-sm ${currentRoom ? 'font-bold' : 'text-[var(--ink3)]'}`}
+                        className={`w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-1 py-1 text-[11px] ${currentRoom ? 'font-bold text-[var(--ink)]' : 'text-[var(--ink3)]'}`}
                       >
-                        <option value="">教室を選択</option>
+                        <option value="">選択</option>
                         {ROOMS.map((room) => {
                           const subj = tt[day]?.[room]?.[i] || '';
+                          const short = room.replace('教室', '').replace('（', '(').replace('）', ')');
                           return (
                             <option key={room} value={room}>
-                              {room}{subj ? ` — ${subj}` : ''}
+                              {short}{subj ? ` ${subj}` : ''}
                             </option>
                           );
                         })}
                       </select>
-                      {currentSubj && (
-                        <span className="text-[11px] text-[var(--ink3)] shrink-0 hidden sm:inline">{currentSubj}</span>
-                      )}
                     </div>
                   );
                 })}
