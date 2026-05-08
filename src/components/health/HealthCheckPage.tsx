@@ -209,10 +209,7 @@ function InputTab() {
   useEffect(() => {
     const init: typeof form = {};
     students.forEach((name) => {
-      const existing = records.find((r) => r.name === name);
-      init[name] = existing
-        ? { condition: existing.condition, attendance: existing.attendance, arrivalTime: existing.arrivalTime, remarks: existing.remarks || '' }
-        : { condition: '', attendance: '', arrivalTime: '', remarks: '' };
+      init[name] = { condition: '', attendance: '', arrivalTime: '', remarks: '' };
     });
     setForm(init);
     setSaved(false);
