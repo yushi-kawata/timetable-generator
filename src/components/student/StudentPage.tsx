@@ -46,15 +46,6 @@ export default function StudentPage() {
     });
   };
 
-  const selectRoom = (day: DayOfWeek, period: number, room: string) => {
-    setSelections((prev) => {
-      const next = { ...prev };
-      if (!next[day]) next[day] = {};
-      next[day] = { ...next[day], [period]: next[day][period] === room ? '' : room };
-      return next;
-    });
-  };
-
   const handleSubmit = () => {
     setError('');
     if (!name.trim()) { setError('氏名を入力してください'); return; }
@@ -215,41 +206,45 @@ export default function StudentPage() {
           <div className="space-y-3">
             {selectedDays.map((day) => (
               <div key={day} className="border border-[var(--border)] rounded-xl overflow-hidden animate-[fadeUp_0.3s_ease_both]">
-                <div className={`${DAY_STYLES[day].header} text-white px-4 py-2.5 font-bold text-sm flex items-center gap-2`}>
+                <div className={`${DAY_STYLES[day].header} text-white px-3 py-2 font-bold text-sm flex items-center gap-2`}>
                   {DAY_ICONS[day]} {day}曜日
                 </div>
                 {[1, 2, 3, 4, 5].map((i) => {
                   const p = PERIODS[i];
+                  const currentRoom = selections[day]?.[i] || '';
+                  const currentSubj = currentRoom ? (tt[day]?.[currentRoom]?.[i] || '') : '';
                   return (
-                    <div key={i} className="grid grid-cols-[90px_1fr] border-t border-[var(--border)] hover:bg-[var(--surface2)]">
-                      <div className="p-3 bg-[var(--surface2)] border-r border-[var(--border)] flex flex-col items-center justify-center text-center">
-                        <span className="text-[13px] font-bold text-[var(--ink2)]">{p.label}</span>
-                        <span className="font-mono text-[9px] text-[var(--ink3)]">{p.time}</span>
+                    <div key={i} className="flex items-center gap-2 border-t border-[var(--border)] px-3 py-1.5">
+                      <div className="shrink-0 w-16 text-center">
+                        <span className="text-xs font-bold text-[var(--ink2)]">{p.label}</span>
+                        <span className="font-mono text-[8px] text-[var(--ink3)] ml-1">{p.time.split('〜')[0]}</span>
                       </div>
-                      <div className="p-2.5 flex gap-2 flex-wrap items-center">
+                      <select
+                        value={currentRoom}
+                        onChange={(e) => {
+                          const room = e.target.value;
+                          setSelections((prev) => {
+                            const next = { ...prev };
+                            if (!next[day]) next[day] = {};
+                            next[day] = { ...next[day], [i]: room };
+                            return next;
+                          });
+                        }}
+                        className={`sel-ctrl flex-1 !py-1.5 text-sm ${currentRoom ? 'font-bold' : 'text-[var(--ink3)]'}`}
+                      >
+                        <option value="">教室を選択</option>
                         {ROOMS.map((room) => {
-                          const subj = tt[day]?.[room]?.[i] || '—';
-                          const isSelected = selections[day]?.[i] === room;
+                          const subj = tt[day]?.[room]?.[i] || '';
                           return (
-                            <button
-                              key={room}
-                              onClick={() => selectRoom(day, i, room)}
-                              className={`flex flex-col items-start gap-0.5 px-3 py-2 rounded-lg border-2 transition-all min-w-[110px] text-left leading-tight ${
-                                isSelected
-                                  ? DAY_STYLES[day].sel
-                                  : 'border-[var(--border)] bg-[var(--surface2)]'
-                              }`}
-                            >
-                              <span className={`text-xs font-bold ${isSelected ? '' : 'text-[var(--ink2)]'}`}>
-                                {room}
-                              </span>
-                              <span className={`text-[11px] ${isSelected ? 'opacity-80' : 'text-[var(--ink3)]'}`}>
-                                {subj}
-                              </span>
-                            </button>
+                            <option key={room} value={room}>
+                              {room}{subj ? ` — ${subj}` : ''}
+                            </option>
                           );
                         })}
-                      </div>
+                      </select>
+                      {currentSubj && (
+                        <span className="text-[11px] text-[var(--ink3)] shrink-0 hidden sm:inline">{currentSubj}</span>
+                      )}
                     </div>
                   );
                 })}
