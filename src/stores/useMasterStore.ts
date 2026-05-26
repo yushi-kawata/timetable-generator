@@ -1,29 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import jsQR from 'jsqr';
 import type { TimetableTemplate, StudentRecord, Student, AttendanceRecord, Period2Selection } from '../types/master';
 import { DEFAULT_TT } from '../types/master';
-
-/** base64のQR画像からURLをデコード */
-function decodeQrUrl(dataUrl: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    if (!dataUrl || dataUrl.length < 100) { resolve(null); return; }
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { resolve(null); return; }
-      ctx.drawImage(img, 0, 0);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, canvas.width, canvas.height);
-      resolve(code?.data || null);
-    };
-    img.onerror = () => resolve(null);
-    img.src = dataUrl;
-  });
-}
 
 // GAS側は "course" カラム、フロント側は "classroom" フィールド
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -198,11 +176,7 @@ export const useAppStore = create<AppState>()(
           const res = await fetch(`${QR_GAS_URL}?action=api`, { redirect: 'follow' });
           const data = await res.json();
           if (data && data.tokou_qr) {
-            const [tokouUrl, gekouUrl] = await Promise.all([
-              decodeQrUrl(data.tokou_qr),
-              decodeQrUrl(data.gekou_qr),
-            ]);
-            set({ qrData: { ...data, tokou_url: tokouUrl, gekou_url: gekouUrl } });
+            set({ qrData: data });
           }
         } catch {}
       },
