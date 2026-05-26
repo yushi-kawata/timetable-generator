@@ -3,12 +3,12 @@ import { useAppStore } from '../../stores/useMasterStore';
 import { DAY_ICONS, ROOMS, PERIODS, GRADE_ROOM } from '../../types/master';
 import type { DayOfWeek, Student } from '../../types/master';
 
-const DAY_STYLES: Record<DayOfWeek, { header: string }> = {
-  月: { header: 'bg-[var(--mon)]' },
-  火: { header: 'bg-[var(--tue)]' },
-  水: { header: 'bg-[var(--wed)]' },
-  木: { header: 'bg-[var(--thu)]' },
-  金: { header: 'bg-[var(--fri)]' },
+const DAY_STYLES: Record<DayOfWeek, { header: string; gradient: string }> = {
+  月: { header: 'bg-gradient-to-r from-purple-600 to-purple-500', gradient: 'from-purple-50 to-white' },
+  火: { header: 'bg-gradient-to-r from-amber-600 to-amber-500', gradient: 'from-amber-50 to-white' },
+  水: { header: 'bg-gradient-to-r from-teal-600 to-teal-500', gradient: 'from-teal-50 to-white' },
+  木: { header: 'bg-gradient-to-r from-blue-600 to-blue-500', gradient: 'from-blue-50 to-white' },
+  金: { header: 'bg-gradient-to-r from-pink-600 to-pink-500', gradient: 'from-pink-50 to-white' },
 };
 
 function todayStr() {
@@ -19,6 +19,12 @@ function todayStr() {
 function todayDow(): DayOfWeek | null {
   const map: (DayOfWeek | null)[] = [null, '月', '火', '水', '木', '金', null];
   return map[new Date().getDay()];
+}
+
+function todayLabel(): string {
+  const d = new Date();
+  const dow = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+  return `${d.getMonth() + 1}/${d.getDate()}（${dow}）`;
 }
 
 function nowTime() {
@@ -42,7 +48,6 @@ export default function StudentPage() {
     authStudent, dxCheckIn,
   } = useAppStore();
 
-  // ログイン状態（sessionStorage: タブ閉じたらリセット）
   const [loggedIn, setLoggedIn] = useState<Student | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -57,20 +62,16 @@ export default function StudentPage() {
   const dow = todayDow();
   const weekKey = getWeekKey(new Date());
 
-  // セッション復元
   useEffect(() => {
     const saved = sessionStorage.getItem('student_session');
     if (saved) {
-      try {
-        setLoggedIn(JSON.parse(saved));
-      } catch { /* ignore */ }
+      try { setLoggedIn(JSON.parse(saved)); } catch { /* */ }
     }
     fetchAttendance(today);
     fetchPeriod2(weekKey);
     fetchQrData();
   }, []);
 
-  // 出席状況チェック
   const myAttendance = loggedIn ? attendance.find(a => a.date === today && a.name === loggedIn.name) : null;
   useEffect(() => {
     if (myAttendance) {
@@ -92,7 +93,6 @@ export default function StudentPage() {
     return GRADE_ROOM[student.grade] || '';
   };
 
-  // ── ログイン処理 ──
   const handleLogin = async () => {
     setLoginError('');
     setLoginLoading(true);
@@ -101,7 +101,6 @@ export default function StudentPage() {
     if (result) {
       setLoggedIn(result);
       sessionStorage.setItem('student_session', JSON.stringify(result));
-      // 出席データ再取得
       fetchAttendance(today);
       fetchPeriod2(weekKey);
     } else {
@@ -119,31 +118,29 @@ export default function StudentPage() {
     setDxStatus('idle');
   };
 
-  // ── 登校処理（DX自動出席付き）──
   const handleCheckIn = async () => {
     if (!student || !dow) return;
-    // 1. 時間割ツール側の出席記録
+    setDxStatus('loading');
     await checkIn(student.name, student.grade, today, nowTime());
     setCheckedIn(true);
-
-    // 2. DX自動出席（裏で）
     if (qrData?.tokou_url && student.dx_email) {
-      setDxStatus('loading');
       const ok = await dxCheckIn(student.dx_email, qrData.tokou_url);
       setDxStatus(ok ? 'ok' : 'fail');
+    } else {
+      setDxStatus('ok');
     }
   };
 
-  // ── 下校処理 ──
   const handleCheckOut = async () => {
     if (!student) return;
+    setDxStatus('loading');
     await checkOut(student.name, today, nowTime());
     setCheckedOut(true);
-
     if (qrData?.gekou_url && student.dx_email) {
-      setDxStatus('loading');
       const ok = await dxCheckIn(student.dx_email, qrData.gekou_url);
       setDxStatus(ok ? 'ok' : 'fail');
+    } else {
+      setDxStatus('ok');
     }
   };
 
@@ -166,50 +163,70 @@ export default function StudentPage() {
   // ══════════════════════════════════
   if (!loggedIn) {
     return (
-      <div className="card max-w-sm mx-auto">
-        <div className="text-center mb-6">
-          <div className="text-2xl font-bold mb-1">📅 通学生ポータル</div>
-          <div className="text-sm text-[var(--ink3)]">younetDXのID・パスワードでログイン</div>
-        </div>
-
-        <div className="mb-4">
-          <div className="form-label">メールアドレス</div>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-            placeholder="example@yushi-kokusai.jp"
-            className="form-input w-full !max-w-none"
-            autoFocus
-          />
-        </div>
-
-        <div className="mb-4">
-          <div className="form-label">パスワード</div>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-            placeholder="パスワード"
-            className="form-input w-full !max-w-none"
-          />
-        </div>
-
-        {loginError && (
-          <div className="text-sm text-red-600 mb-4">
-            {loginError}
+      <div className="min-h-[70vh] flex items-center justify-center">
+        <div className="w-full max-w-sm">
+          {/* ロゴ・タイトル */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white text-2xl mb-4 shadow-lg shadow-blue-200">
+              Y
+            </div>
+            <h1 className="text-2xl font-bold text-[var(--ink)]">通学生ポータル</h1>
+            <p className="text-sm text-[var(--ink3)] mt-1">勇志国際高等学校 福岡学習センター</p>
           </div>
-        )}
 
-        <button
-          onClick={handleLogin}
-          disabled={loginLoading || !email || !password}
-          className="w-full py-3 bg-[var(--accent)] text-white rounded-xl font-bold text-sm hover:bg-blue-800 transition-colors disabled:opacity-50"
-        >
-          {loginLoading ? 'ログイン中...' : 'ログイン'}
-        </button>
+          {/* 手順ガイド */}
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-6 border border-blue-100">
+            <div className="text-xs font-bold text-blue-700 mb-2">ご利用手順</div>
+            <div className="space-y-1.5 text-xs text-blue-600">
+              <div className="flex items-start gap-2"><span className="font-bold min-w-[18px]">1.</span>younetDXのID・パスワードでログイン</div>
+              <div className="flex items-start gap-2"><span className="font-bold min-w-[18px]">2.</span>「登校しました」ボタンを押す</div>
+              <div className="flex items-start gap-2"><span className="font-bold min-w-[18px]">3.</span>younetDXの出席も自動で登録されます</div>
+              <div className="flex items-start gap-2"><span className="font-bold min-w-[18px]">4.</span>時間割を確認してください</div>
+            </div>
+          </div>
+
+          {/* ログインフォーム */}
+          <div className="card !mb-0 shadow-lg shadow-stone-200/50">
+            <div className="mb-4">
+              <div className="form-label">メールアドレス</div>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                placeholder="example@yushi-kokusai.jp"
+                className="form-input w-full !max-w-none"
+                autoFocus
+              />
+            </div>
+            <div className="mb-5">
+              <div className="form-label">パスワード</div>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                placeholder="パスワード"
+                className="form-input w-full !max-w-none"
+              />
+            </div>
+            {loginError && (
+              <div className="text-sm text-red-600 mb-4 bg-red-50 px-3 py-2 rounded-lg">{loginError}</div>
+            )}
+            <button
+              onClick={handleLogin}
+              disabled={loginLoading || !email || !password}
+              className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 shadow-md shadow-blue-200"
+            >
+              {loginLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ログイン中...
+                </span>
+              ) : 'ログイン'}
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -219,18 +236,25 @@ export default function StudentPage() {
   // ══════════════════════════════════
   if (!dow) {
     return (
-      <div className="card">
+      <div className="card shadow-lg shadow-stone-200/50">
         <StudentHeader student={student!} onLogout={handleLogout} />
-        <div className="text-center py-8 text-[var(--ink3)]">今日は休日です</div>
+        <div className="text-center py-10 text-[var(--ink3)]">
+          <div className="text-4xl mb-3">🌙</div>
+          <div className="font-bold">今日は休日です</div>
+          <div className="text-xs mt-1">ゆっくり休んでください</div>
+        </div>
       </div>
     );
   }
 
   if (!isSchoolDay) {
     return (
-      <div className="card">
+      <div className="card shadow-lg shadow-stone-200/50">
         <StudentHeader student={student!} onLogout={handleLogout} />
-        <div className="text-center py-8 text-[var(--ink3)]">{dow}曜日は登校日ではありません</div>
+        <div className="text-center py-10 text-[var(--ink3)]">
+          <div className="text-4xl mb-3">🏠</div>
+          <div className="font-bold">{dow}曜日は登校日ではありません</div>
+        </div>
       </div>
     );
   }
@@ -239,37 +263,57 @@ export default function StudentPage() {
   // ── メイン画面 ──
   // ══════════════════════════════════
   return (
-    <div className="space-y-4">
-      {/* ヘッダー + 出席ボタン */}
-      <div className="card">
+    <div className="space-y-5">
+      {/* ヘッダーカード */}
+      <div className="card shadow-lg shadow-stone-200/50 !pb-5">
         <StudentHeader student={student!} onLogout={handleLogout} />
 
-        <div className="flex items-center gap-3 mt-4 flex-wrap">
+        {/* 出席アクション */}
+        <div className="mt-5">
           {!checkedIn ? (
             <button
               onClick={handleCheckIn}
               disabled={dxStatus === 'loading'}
-              className="px-6 py-3 bg-[var(--accent)] text-white rounded-xl font-bold text-sm hover:bg-blue-800 transition-colors disabled:opacity-50"
+              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-base hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-60 shadow-md shadow-blue-200"
             >
-              {dxStatus === 'loading' ? '処理中...' : '📍 登校しました'}
+              {dxStatus === 'loading' ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  younetDXに出席登録中...
+                </span>
+              ) : '登校しました'}
             </button>
           ) : (
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-sm font-bold text-[var(--green)] bg-[var(--green-l)] px-4 py-2 rounded-lg">
-                ✅ 登校済み {myAttendance?.checkinTime || ''}
-              </span>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-3 rounded-xl border border-emerald-200">
+                <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white text-sm">✓</div>
+                <div>
+                  <div className="text-sm font-bold text-emerald-700">登校済み</div>
+                  <div className="text-xs text-emerald-600">{myAttendance?.checkinTime || ''} に登校を記録しました</div>
+                </div>
+              </div>
+
               {!checkedOut ? (
                 <button
                   onClick={handleCheckOut}
                   disabled={dxStatus === 'loading'}
-                  className="px-5 py-2 bg-red-600 text-white rounded-xl font-bold text-xs hover:bg-red-700 transition-colors disabled:opacity-50"
+                  className="w-full py-3 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-xl font-bold text-sm hover:from-rose-600 hover:to-red-600 transition-all disabled:opacity-60 shadow-md shadow-rose-200"
                 >
-                  {dxStatus === 'loading' ? '処理中...' : '🏠 下校する'}
+                  {dxStatus === 'loading' ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      younetDXに下校登録中...
+                    </span>
+                  ) : '下校する'}
                 </button>
               ) : (
-                <span className="text-sm font-bold text-[var(--ink3)] bg-[var(--surface2)] px-4 py-2 rounded-lg">
-                  🏠 下校済み {myAttendance?.checkoutTime || ''}
-                </span>
+                <div className="flex items-center gap-3 bg-[var(--surface2)] px-4 py-3 rounded-xl border border-[var(--border)]">
+                  <div className="w-8 h-8 rounded-full bg-[var(--ink3)] flex items-center justify-center text-white text-sm">✓</div>
+                  <div>
+                    <div className="text-sm font-bold text-[var(--ink2)]">下校済み</div>
+                    <div className="text-xs text-[var(--ink3)]">{myAttendance?.checkoutTime || ''} に下校を記録しました</div>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -277,28 +321,38 @@ export default function StudentPage() {
 
         {/* DXステータス */}
         {dxStatus === 'ok' && (
-          <div className="mt-2 text-xs text-[var(--green)] font-semibold">younetDXにも出席登録しました</div>
+          <div className="mt-3 text-xs text-emerald-600 font-semibold bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100">
+            younetDXにも出席を登録しました
+          </div>
         )}
         {dxStatus === 'fail' && (
-          <div className="mt-2 text-xs text-red-600 font-semibold">younetDXの出席登録に失敗しました（手動で登録してください）</div>
+          <div className="mt-3 text-xs text-red-600 font-semibold bg-red-50 px-3 py-2 rounded-lg border border-red-100">
+            younetDXの出席登録に失敗しました（手動で登録してください）
+          </div>
         )}
       </div>
 
       {/* 今日の時間割 */}
-      <div className="card">
-        <div className="card-title">📅 今日の時間割（{dow}曜日）</div>
-        <div className="rounded-xl border border-[var(--border)] overflow-hidden">
-          <div className={`${DAY_STYLES[dow].header} text-white px-4 py-2.5 font-bold text-sm flex items-center gap-1.5`}>
-            {DAY_ICONS[dow]} {dow}曜日 — {today}
+      <div className="card shadow-lg shadow-stone-200/50">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="card-title !mb-0">今日の時間割</div>
+            <div className="text-sm font-bold text-[var(--ink)] mt-1">{todayLabel()}</div>
           </div>
+          <div className={`text-xs font-bold text-white px-3 py-1 rounded-full ${DAY_STYLES[dow].header}`}>
+            {DAY_ICONS[dow]} {dow}曜日
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-[var(--border)] overflow-hidden shadow-sm">
           {/* SHR */}
-          <div className="grid grid-cols-[70px_1fr] border-t border-[var(--border)] hover:bg-[var(--surface2)]">
-            <div className="p-2 text-center bg-[var(--surface2)] border-r border-[var(--border)] flex flex-col items-center justify-center">
+          <div className={`grid grid-cols-[72px_1fr] bg-gradient-to-r ${DAY_STYLES[dow].gradient}`}>
+            <div className="p-2.5 text-center border-r border-[var(--border)] flex flex-col items-center justify-center bg-white/50">
               <span className="text-xs font-bold text-[var(--ink2)]">SHR</span>
-              <span className="font-mono text-[9px] text-[var(--ink3)]">9:20〜9:30</span>
+              <span className="font-mono text-[9px] text-[var(--ink3)]">9:20</span>
             </div>
-            <div className="p-3 flex flex-col justify-center">
-              <div className="text-sm font-semibold">ホームルーム</div>
+            <div className="p-3 flex items-center">
+              <div className="text-sm font-semibold text-[var(--ink2)]">ホームルーム</div>
             </div>
           </div>
           {/* 1〜5限 */}
@@ -310,10 +364,10 @@ export default function StudentPage() {
             const needsSelection = isPeriod2 && !currentP2Room;
 
             return (
-              <div key={i} className={`grid grid-cols-[70px_1fr] border-t border-[var(--border)] hover:bg-[var(--surface2)] ${needsSelection ? 'bg-amber-50' : ''}`}>
-                <div className="p-2 text-center bg-[var(--surface2)] border-r border-[var(--border)] flex flex-col items-center justify-center">
+              <div key={i} className={`grid grid-cols-[72px_1fr] border-t border-[var(--border)] transition-colors ${needsSelection ? 'bg-amber-50' : 'hover:bg-[var(--surface2)]'}`}>
+                <div className="p-2.5 text-center border-r border-[var(--border)] flex flex-col items-center justify-center bg-white/50">
                   <span className="text-xs font-bold text-[var(--ink2)]">{p.label}</span>
-                  <span className="font-mono text-[9px] text-[var(--ink3)]">{p.time}</span>
+                  <span className="font-mono text-[9px] text-[var(--ink3)]">{p.time.split('〜')[0]}</span>
                 </div>
                 <div className="p-3 flex flex-col justify-center">
                   {needsSelection ? (
@@ -324,7 +378,7 @@ export default function StudentPage() {
                           <button
                             key={o.room}
                             onClick={() => handlePeriod2Select(o.room)}
-                            className="px-3 py-1.5 rounded-lg border-2 border-[var(--border)] bg-[var(--surface)] text-xs font-bold hover:border-[var(--accent)] hover:bg-blue-50 transition-all"
+                            className="px-3 py-1.5 rounded-lg border-2 border-[var(--border)] bg-white text-xs font-bold hover:border-[var(--accent)] hover:bg-blue-50 hover:shadow-sm transition-all"
                           >
                             {o.room.replace('教室', '').replace('（', '(').replace('）', ')')} {o.subject}
                           </button>
@@ -333,13 +387,13 @@ export default function StudentPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="text-sm font-semibold">{subj}</div>
+                      <div className="text-sm font-bold">{subj}</div>
                       <div className="text-[11px] text-[var(--ink3)]">
                         {room}
                         {isPeriod2 && currentP2Room && (
                           <button
                             onClick={() => handlePeriod2Select('')}
-                            className="ml-2 text-[var(--accent)] underline"
+                            className="ml-2 text-[var(--accent)] hover:underline"
                           >
                             変更
                           </button>
@@ -364,14 +418,19 @@ function StudentHeader({ student, onLogout }: {
   onLogout: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between flex-wrap gap-3">
-      <div>
-        <div className="text-lg font-bold">{student.name}</div>
-        <div className="text-xs text-[var(--ink3)]">
-          {student.grade} {student.classroom === 'B教室' ? '・B教室' : ''}
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-200">
+          {student.name.charAt(0)}
+        </div>
+        <div>
+          <div className="text-base font-bold">{student.name}</div>
+          <div className="text-xs text-[var(--ink3)]">
+            {student.grade}{student.classroom === 'B教室' ? ' / B教室' : ''}
+          </div>
         </div>
       </div>
-      <button onClick={onLogout} className="btn-sub text-xs">
+      <button onClick={onLogout} className="text-xs text-[var(--ink3)] hover:text-[var(--ink)] transition-colors px-3 py-1.5 rounded-lg hover:bg-[var(--surface2)]">
         ログアウト
       </button>
     </div>
