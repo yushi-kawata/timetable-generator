@@ -53,7 +53,9 @@ export default function StudentPage() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-  const [dxStatus, setDxStatus] = useState<'idle' | 'loading' | 'ok' | 'fail'>('idle');
+  const [checkInLoading, setCheckInLoading] = useState(false);
+  const [checkOutLoading, setCheckOutLoading] = useState(false);
+  const [dxResult, setDxResult] = useState<'none' | 'ok' | 'fail'>('none');
   const [attendanceLoading, setAttendanceLoading] = useState(true);
 
   const today = todayStr();
@@ -75,10 +77,6 @@ export default function StudentPage() {
   const myAttendance = loggedIn ? attendance.find(a => a.date === today && a.name === loggedIn.name) : null;
   const checkedIn = !!myAttendance;
   const checkedOut = !!(myAttendance?.checkoutTime);
-  // DXステータスをリセット（リロード後）
-  useEffect(() => {
-    if (checkedIn && dxStatus === 'idle') setDxStatus('ok');
-  }, [checkedIn]);
 
   const student = loggedIn;
   const isSchoolDay = dow && student?.days[dow];
@@ -114,31 +112,35 @@ export default function StudentPage() {
     sessionStorage.removeItem('student_session');
     setEmail('');
     setPassword('');
-    setDxStatus('idle');
+    setDxResult('none');
   };
 
   const handleCheckIn = async () => {
-    if (!student || !dow) return;
-    setDxStatus('loading');
+    if (!student || !dow || checkInLoading) return;
+    setCheckInLoading(true);
+    setDxResult('none');
     await checkIn(student.name, student.grade, today, nowTime());
     if (qrData?.tokou_url && student.dx_email) {
       const ok = await dxCheckIn(student.dx_email, qrData.tokou_url);
-      setDxStatus(ok ? 'ok' : 'fail');
+      setDxResult(ok ? 'ok' : 'fail');
     } else {
-      setDxStatus('ok');
+      setDxResult('ok');
     }
+    setCheckInLoading(false);
   };
 
   const handleCheckOut = async () => {
-    if (!student) return;
-    setDxStatus('loading');
+    if (!student || checkOutLoading) return;
+    setCheckOutLoading(true);
+    setDxResult('none');
     await checkOut(student.name, today, nowTime());
     if (qrData?.gekou_url && student.dx_email) {
       const ok = await dxCheckIn(student.dx_email, qrData.gekou_url);
-      setDxStatus(ok ? 'ok' : 'fail');
+      setDxResult(ok ? 'ok' : 'fail');
     } else {
-      setDxStatus('ok');
+      setDxResult('ok');
     }
+    setCheckOutLoading(false);
   };
 
   const handlePeriodSelect = async (period: number, room: string) => {
@@ -274,14 +276,14 @@ export default function StudentPage() {
             <div className="text-center py-4 text-[var(--ink3)] text-sm">出席状況を確認中...</div>
           ) : (
             <>
-              {/* 登校ボタン / 登校済み表示 */}
+              {/* 登校 */}
               {!checkedIn ? (
                 <button
                   onClick={handleCheckIn}
-                  disabled={dxStatus === 'loading'}
+                  disabled={checkInLoading}
                   className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-base hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-60 shadow-md shadow-blue-200"
                 >
-                  {dxStatus === 'loading' ? (
+                  {checkInLoading ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       younetDXに出席登録中...
@@ -298,14 +300,18 @@ export default function StudentPage() {
                 </div>
               )}
 
-              {/* 下校ボタン / 下校済み表示 */}
+              {/* 下校 */}
               {!checkedOut ? (
                 <button
-                  onClick={checkedIn ? handleCheckOut : undefined}
-                  disabled={dxStatus === 'loading' || !checkedIn}
-                  className={`w-full py-3 rounded-xl font-bold text-sm transition-all shadow-md ${checkedIn ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white hover:from-rose-600 hover:to-red-600 shadow-rose-200 disabled:opacity-60' : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'}`}
+                  onClick={handleCheckOut}
+                  disabled={checkOutLoading || !checkedIn}
+                  className={`w-full py-3 rounded-xl font-bold text-sm transition-all shadow-md ${
+                    checkedIn
+                      ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white hover:from-rose-600 hover:to-red-600 shadow-rose-200 disabled:opacity-60'
+                      : 'bg-gray-200 text-gray-400 shadow-none'
+                  }`}
                 >
-                  {dxStatus === 'loading' ? (
+                  {checkOutLoading ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       younetDXに下校登録中...
@@ -326,12 +332,12 @@ export default function StudentPage() {
         </div>
 
         {/* DXステータス */}
-        {dxStatus === 'ok' && (
+        {dxResult === 'ok' && (
           <div className="mt-3 text-xs text-emerald-600 font-semibold bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100">
             younetDXにも出席を登録しました
           </div>
         )}
-        {dxStatus === 'fail' && (
+        {dxResult === 'fail' && (
           <div className="mt-3 text-xs text-red-600 font-semibold bg-red-50 px-3 py-2 rounded-lg border border-red-100">
             younetDXの出席登録に失敗しました（手動で登録してください）
           </div>
