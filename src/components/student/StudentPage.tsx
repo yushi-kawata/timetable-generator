@@ -94,12 +94,20 @@ export default function StudentPage() {
     if (!student || !dow) return;
     await checkIn(selectedName, student.grade, today, nowTime());
     setCheckedIn(true);
+    // younetDXの登校ページを自動で開く
+    if (qrData?.tokou_url) {
+      window.open(qrData.tokou_url, '_blank');
+    }
   };
 
   const handleCheckOut = async () => {
     if (!selectedName) return;
     await checkOut(selectedName, today, nowTime());
     setCheckedOut(true);
+    // younetDXの下校ページを自動で開く
+    if (qrData?.gekou_url) {
+      window.open(qrData.gekou_url, '_blank');
+    }
   };
 
   const handlePeriod2Select = async (room: string) => {
