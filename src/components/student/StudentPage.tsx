@@ -62,7 +62,7 @@ export default function StudentPage() {
       const p2 = period2.find(p => p.week === weekKey && p.name === selectedName);
       return p2?.selections[dow] || '';
     }
-    if (student.course === 'Growth') return 'B教室';
+    if (student.classroom === 'B教室') return 'B教室';
     return GRADE_ROOM[student.grade] || '';
   };
 
@@ -130,7 +130,7 @@ export default function StudentPage() {
         >
           <option value="">-- 名前を選択 --</option>
           {students.map(s => (
-            <option key={s.name} value={s.name}>{s.name}（{s.grade}{s.course === 'Growth' ? '・Growth' : ''}）</option>
+            <option key={s.name} value={s.name}>{s.name}（{s.grade}{s.classroom === 'B教室' ? '・B教室' : ''}）</option>
           ))}
         </select>
       </div>
@@ -279,7 +279,7 @@ export default function StudentPage() {
 
 function StudentHeader({ name, student, onChangeName }: {
   name: string;
-  student: { grade: string; course: string };
+  student: { grade: string; classroom: string };
   onChangeName: () => void;
 }) {
   return (
@@ -287,7 +287,7 @@ function StudentHeader({ name, student, onChangeName }: {
       <div>
         <div className="text-lg font-bold">{name}</div>
         <div className="text-xs text-[var(--ink3)]">
-          {student.grade} {student.course === 'Growth' ? '・Growthコース' : ''}
+          {student.grade} {student.classroom === 'B教室' ? '・B教室' : ''}
         </div>
       </div>
       <button onClick={onChangeName} className="btn-sub text-xs">
