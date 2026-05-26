@@ -60,7 +60,7 @@ export default function TeacherPage() {
     const rows = expectedStudents.map(s => {
       const a = attendance.find(r => r.name === s.name);
       return [
-        s.name, s.grade, s.course,
+        s.name, s.grade, s.classroom,
         a ? '出席' : '未出席',
         a?.checkinTime || '', a?.checkoutTime || '',
       ];
@@ -140,7 +140,7 @@ export default function TeacherPage() {
             <table className="mgmt-table">
               <thead>
                 <tr>
-                  <th>No.</th><th>氏名</th><th>学年</th><th>コース</th>
+                  <th>No.</th><th>氏名</th><th>学年</th><th>所属教室</th>
                   <th>状態</th><th>登校時間</th><th>下校時間</th>
                 </tr>
               </thead>
@@ -155,7 +155,7 @@ export default function TeacherPage() {
                         <td className="text-[var(--ink3)]">{i + 1}</td>
                         <td className="font-bold">{s.name}</td>
                         <td><span className="badge">{s.grade}</span></td>
-                        <td className="text-xs">{s.course}</td>
+                        <td className="text-xs">{s.classroom}</td>
                         <td>
                           {a ? (
                             <span className="badge !bg-[var(--green-l)] !text-[var(--green)]">✓ 出席</span>
@@ -250,7 +250,7 @@ export default function TeacherPage() {
                                 }).map(s => s.name);
                               } else {
                                 names = dayStudents.filter(s => {
-                                  if (s.course === 'Growth') return room === 'B教室';
+                                  if (s.classroom === 'B教室') return room === 'B教室';
                                   return GRADE_ROOM[s.grade] === room;
                                 }).map(s => s.name);
                               }

@@ -17,7 +17,7 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
   const [localStudents, setLocalStudents] = useState<Student[]>([]);
   const [newName, setNewName] = useState('');
   const [newGrade, setNewGrade] = useState('2年');
-  const [newCourse, setNewCourse] = useState('通常');
+  const [newClassroom, setNewClassroom] = useState('学年教室');
   const [saved, setSaved] = useState(false);
   const [editDay, setEditDay] = useState<DayOfWeek>('月');
   const [ttSaved, setTtSaved] = useState(false);
@@ -39,7 +39,7 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
     );
   };
 
-  const updateStudent = (idx: number, field: 'grade' | 'course', value: string) => {
+  const updateStudent = (idx: number, field: 'grade' | 'classroom', value: string) => {
     setLocalStudents(prev =>
       prev.map((s, i) => i === idx ? { ...s, [field]: value } : s)
     );
@@ -50,7 +50,7 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
     setLocalStudents(prev => [...prev, {
       name: newName.trim(),
       grade: newGrade,
-      course: newCourse,
+      classroom: newClassroom,
       days: { 月: false, 火: false, 水: false, 木: false, 金: false },
     }]);
     setNewName('');
@@ -105,7 +105,7 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
           <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
             <div>
               <div className="card-title !mb-0">👥 生徒マスター</div>
-              <div className="text-xs text-[var(--ink3)]">名前・学年・コース・登校曜日を管理</div>
+              <div className="text-xs text-[var(--ink3)]">名前・学年・所属教室・登校曜日を管理</div>
             </div>
             <div className="flex gap-2 items-center">
               {saved && (
@@ -129,7 +129,7 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
                   <th className="w-12">No.</th>
                   <th>生徒名</th>
                   <th>学年</th>
-                  <th>コース</th>
+                  <th>所属教室</th>
                   {DAYS.map(d => (
                     <th key={d} className="text-center w-14">{DAY_ICONS[d]} {d}</th>
                   ))}
@@ -154,8 +154,8 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
                     </td>
                     <td>
                       <select
-                        value={s.course}
-                        onChange={e => updateStudent(i, 'course', e.target.value)}
+                        value={s.classroom}
+                        onChange={e => updateStudent(i, 'classroom', e.target.value)}
                         className="sel-ctrl text-xs"
                       >
                         <option value="通常">通常</option>
@@ -202,9 +202,9 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
               <option value="2年">2年</option>
               <option value="3年">3年</option>
             </select>
-            <select value={newCourse} onChange={e => setNewCourse(e.target.value)} className="sel-ctrl text-xs">
-              <option value="通常">通常</option>
-              <option value="Growth">Growth</option>
+            <select value={newClassroom} onChange={e => setNewClassroom(e.target.value)} className="sel-ctrl text-xs">
+              <option value="学年教室">学年教室</option>
+              <option value="B教室">B教室</option>
             </select>
             <button onClick={addStudent} className="px-5 py-2 bg-[var(--ink)] text-white rounded-lg font-bold text-xs">
               ＋ 追加

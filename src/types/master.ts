@@ -26,7 +26,7 @@ export type TimetableTemplate = Record<string, Record<string, string[]>>;
 export type Student = {
   name: string;
   grade: string;       // "1年" | "2年" | "3年"
-  course: string;      // "通常" | "Growth"
+  classroom: string;   // "学年教室" | "B教室"
   days: Record<DayOfWeek, boolean>;
 };
 
