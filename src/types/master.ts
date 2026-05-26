@@ -12,6 +12,9 @@ export const PERIODS = [
   { label: '5限', time: '14:00〜14:50', isSHR: false },
 ];
 
+/** 選択式の時限（教室を選べる時限） */
+export const SELECTABLE_PERIODS = [2, 4, 5];
+
 /** 学年 → デフォルト教室 */
 export const GRADE_ROOM: Record<string, string> = {
   '1年': 'D教室（1年）',
@@ -40,12 +43,15 @@ export type AttendanceRecord = {
   checkoutTime: string; // "14:55" or ""
 };
 
-/** 2限目選択 */
-export type Period2Selection = {
+/** 選択科目（2・4・5限目） */
+export type PeriodSelection = {
   week: string;        // "2026-05-25" (月曜の日付)
   name: string;
-  selections: Partial<Record<DayOfWeek, string>>; // 曜日 → 教室名
+  selections: Partial<Record<DayOfWeek, Record<number, string>>>; // 曜日 → { 時限 → 教室名 }
 };
+
+/** レガシー互換（旧Period2Selection） */
+export type Period2Selection = PeriodSelection;
 
 /** 生徒の申告データ（レガシー互換） */
 export type StudentRecord = {

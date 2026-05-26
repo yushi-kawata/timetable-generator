@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/useMasterStore';
-import { DAYS, DAY_ICONS, ROOMS, GRADE_ROOM } from '../../types/master';
+import { DAYS, DAY_ICONS, ROOMS, GRADE_ROOM, SELECTABLE_PERIODS } from '../../types/master';
 import type { DayOfWeek } from '../../types/master';
 
 const DAY_HEADERS: Record<DayOfWeek, string> = {
@@ -177,26 +177,28 @@ export default function TeacherPage() {
 
       {tab === 'period2' && (
         <div className="card">
-          <div className="card-title">📝 2限目選択状況（{weekKey}〜）</div>
+          <div className="card-title">📝 選択科目状況（{weekKey}〜）— 2・4・5限目</div>
           <div className="overflow-x-auto">
             <table className="mgmt-table">
               <thead>
                 <tr>
-                  <th>氏名</th><th>学年</th>
+                  <th>氏名</th><th>学年</th><th>限</th>
                   {DAYS.map(d => <th key={d} className="text-center">{DAY_ICONS[d]} {d}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {students.filter(s => DAYS.some(d => s.days[d])).map(s => {
                   const p2 = period2.find(p => p.week === weekKey && p.name === s.name);
-                  return (
-                    <tr key={s.name}>
-                      <td className="font-bold">{s.name}</td>
-                      <td><span className="badge">{s.grade}</span></td>
+                  return [2, 4, 5].map((period, pi) => (
+                    <tr key={`${s.name}-${period}`} className={pi === 0 ? 'border-t-2 border-[var(--border)]' : ''}>
+                      {pi === 0 && <td className="font-bold" rowSpan={3}>{s.name}</td>}
+                      {pi === 0 && <td rowSpan={3}><span className="badge">{s.grade}</span></td>}
+                      <td className="text-center font-bold text-xs">{period}限</td>
                       {DAYS.map(d => {
                         if (!s.days[d]) return <td key={d} className="text-center text-[var(--ink3)]">—</td>;
-                        const sel = p2?.selections[d];
-                        const subj = sel ? (tt[d]?.[sel]?.[2] || sel) : '';
+                        const daySel = p2?.selections[d] as Record<number, string> | undefined;
+                        const sel = daySel?.[period];
+                        const subj = sel ? (tt[d]?.[sel]?.[period] || sel) : '';
                         return (
                           <td key={d} className="text-center text-xs">
                             {sel ? (
@@ -208,7 +210,7 @@ export default function TeacherPage() {
                         );
                       })}
                     </tr>
-                  );
+                  ));
                 })}
               </tbody>
             </table>
@@ -243,10 +245,11 @@ export default function TeacherPage() {
                             <td className="px-3 py-2 font-bold text-[var(--ink2)]">{i}限</td>
                             {ROOMS.map(room => {
                               let names: string[];
-                              if (i === 2) {
+                              if (SELECTABLE_PERIODS.includes(i)) {
                                 names = dayStudents.filter(s => {
                                   const p2 = period2.find(p => p.week === weekKey && p.name === s.name);
-                                  return p2?.selections[day] === room;
+                                  const daySel = p2?.selections[day] as Record<number, string> | undefined;
+                                  return daySel?.[i] === room;
                                 }).map(s => s.name);
                               } else {
                                 names = dayStudents.filter(s => {
