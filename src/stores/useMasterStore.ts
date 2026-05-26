@@ -131,7 +131,12 @@ export const useAppStore = create<AppState>()(
           set({
             records: [...seen.values()].sort((a, b) => b.id - a.id),
             tt: ttData && typeof ttData === 'object' && ttData['月'] ? ttData : get().tt,
-            students: Array.isArray(studentsData) ? studentsData.map(mapStudentFromGas) : get().students,
+            students: Array.isArray(studentsData) ? (() => {
+              const mapped = studentsData.map(mapStudentFromGas).filter((s: Student) => s.name.trim());
+              const seen = new Map<string, Student>();
+              for (const s of mapped) seen.set(s.name, s);
+              return [...seen.values()];
+            })() : get().students,
             loading: false,
           });
         } catch {
@@ -142,7 +147,11 @@ export const useAppStore = create<AppState>()(
       fetchStudents: async () => {
         const data = await gasGet('getStudents');
         if (Array.isArray(data)) {
-          set({ students: data.map(mapStudentFromGas) });
+          // 空行を除外 & 同名重複を除外（最後の登録を優先）
+          const mapped = data.map(mapStudentFromGas).filter(s => s.name.trim());
+          const seen = new Map<string, typeof mapped[0]>();
+          for (const s of mapped) seen.set(s.name, s);
+          set({ students: [...seen.values()] });
         }
       },
 
