@@ -10,15 +10,18 @@ function mapStudentFromGas(s: any): Student {
     name: s.name || '',
     grade: s.grade || '',
     classroom: s.course === 'Growth' ? 'B教室' : (s.course || '学年教室'),
+    dx_email: s.dx_email || '',
     days: s.days || { 月: false, 火: false, 水: false, 木: false, 金: false },
   };
 }
 
-function mapStudentToGas(s: Student) {
+function mapStudentToGas(s: Student & { dx_password?: string }) {
   return {
     name: s.name,
     grade: s.grade,
     course: s.classroom === 'B教室' ? 'Growth' : '通常',
+    dx_email: s.dx_email || '',
+    dx_password: s.dx_password || '',
     days: s.days,
   };
 }
@@ -82,10 +85,13 @@ interface AppState {
   updateTTCell: (day: string, room: string, period: number, value: string) => void;
   saveTT: () => Promise<void>;
 
-  saveStudents: (students: Student[]) => Promise<void>;
+  saveStudents: (students: (Student & { dx_password?: string })[]) => Promise<void>;
   checkIn: (name: string, grade: string, date: string, time: string) => Promise<void>;
   checkOut: (name: string, date: string, time: string) => Promise<void>;
   savePeriod2: (week: string, name: string, selections: Partial<Record<string, string>>) => Promise<void>;
+
+  authStudent: (email: string, password: string) => Promise<Student | null>;
+  dxCheckIn: (email: string, dxUrl: string) => Promise<boolean>;
 
   // レガシー互換
   addRecord: (r: Omit<StudentRecord, 'id'>) => Promise<void>;
@@ -231,6 +237,37 @@ export const useAppStore = create<AppState>()(
           ],
         }));
         await gasPost({ action: 'savePeriod2', week, name, selections });
+      },
+
+      authStudent: async (email: string, password: string): Promise<Student | null> => {
+        try {
+          const res = await fetch(GAS_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'authStudent', email, password }),
+          });
+          const data = await res.json();
+          if (data.ok && data.student) {
+            return mapStudentFromGas(data.student);
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      },
+
+      dxCheckIn: async (email: string, dxUrl: string): Promise<boolean> => {
+        try {
+          const res = await fetch(GAS_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'dxCheckIn', email, dxUrl }),
+          });
+          const data = await res.json();
+          return data.ok === true;
+        } catch {
+          return false;
+        }
       },
 
       // レガシー互換

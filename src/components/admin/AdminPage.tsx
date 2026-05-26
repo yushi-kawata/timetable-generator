@@ -18,6 +18,8 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
   const [newName, setNewName] = useState('');
   const [newGrade, setNewGrade] = useState('2年');
   const [newClassroom, setNewClassroom] = useState('学年教室');
+  const [newDxEmail, setNewDxEmail] = useState('');
+  const [newDxPassword, setNewDxPassword] = useState('');
   const [saved, setSaved] = useState(false);
   const [editDay, setEditDay] = useState<DayOfWeek>('月');
   const [ttSaved, setTtSaved] = useState(false);
@@ -39,7 +41,7 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
     );
   };
 
-  const updateStudent = (idx: number, field: 'grade' | 'classroom', value: string) => {
+  const updateStudent = (idx: number, field: string, value: string) => {
     setLocalStudents(prev =>
       prev.map((s, i) => i === idx ? { ...s, [field]: value } : s)
     );
@@ -51,9 +53,13 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
       name: newName.trim(),
       grade: newGrade,
       classroom: newClassroom,
+      dx_email: newDxEmail.trim(),
+      dx_password: newDxPassword,
       days: { 月: false, 火: false, 水: false, 木: false, 金: false },
     }]);
     setNewName('');
+    setNewDxEmail('');
+    setNewDxPassword('');
   };
 
   const removeStudent = (idx: number) => {
@@ -130,6 +136,8 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
                   <th>生徒名</th>
                   <th>学年</th>
                   <th>所属教室</th>
+                  <th>DXメール</th>
+                  <th>DXパスワード</th>
                   {DAYS.map(d => (
                     <th key={d} className="text-center w-14">{DAY_ICONS[d]} {d}</th>
                   ))}
@@ -161,6 +169,24 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
                         <option value="通常">通常</option>
                         <option value="Growth">Growth</option>
                       </select>
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={(s as any).dx_email || s.dx_email || ''}
+                        onChange={e => updateStudent(i, 'dx_email', e.target.value)}
+                        placeholder="email"
+                        className="tbl-input text-xs"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        value={(s as any).dx_password || ''}
+                        onChange={e => updateStudent(i, 'dx_password', e.target.value)}
+                        placeholder="password"
+                        className="tbl-input text-xs"
+                      />
                     </td>
                     {DAYS.map(d => (
                       <td key={d} className="text-center">
@@ -206,6 +232,20 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
               <option value="学年教室">学年教室</option>
               <option value="B教室">B教室</option>
             </select>
+            <input
+              type="text"
+              placeholder="DXメール"
+              value={newDxEmail}
+              onChange={e => setNewDxEmail(e.target.value)}
+              className="form-input !max-w-[180px] text-xs"
+            />
+            <input
+              type="text"
+              placeholder="DXパスワード"
+              value={newDxPassword}
+              onChange={e => setNewDxPassword(e.target.value)}
+              className="form-input !max-w-[140px] text-xs"
+            />
             <button onClick={addStudent} className="px-5 py-2 bg-[var(--ink)] text-white rounded-lg font-bold text-xs">
               ＋ 追加
             </button>
