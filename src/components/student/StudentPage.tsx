@@ -53,10 +53,8 @@ export default function StudentPage() {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
-
-  const [checkedIn, setCheckedIn] = useState(false);
-  const [checkedOut, setCheckedOut] = useState(false);
   const [dxStatus, setDxStatus] = useState<'idle' | 'loading' | 'ok' | 'fail'>('idle');
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
 
   const today = todayStr();
   const dow = todayDow();
@@ -67,18 +65,16 @@ export default function StudentPage() {
     if (saved) {
       try { setLoggedIn(JSON.parse(saved)); } catch { /* */ }
     }
-    fetchAttendance(today);
-    fetchPeriod2(weekKey);
-    fetchQrData();
+    Promise.all([
+      fetchAttendance(today),
+      fetchPeriod2(weekKey),
+      fetchQrData(),
+    ]).finally(() => setAttendanceLoading(false));
   }, []);
 
   const myAttendance = loggedIn ? attendance.find(a => a.date === today && a.name === loggedIn.name) : null;
-  useEffect(() => {
-    if (myAttendance) {
-      setCheckedIn(true);
-      if (myAttendance.checkoutTime) setCheckedOut(true);
-    }
-  }, [myAttendance]);
+  const checkedIn = !!myAttendance;
+  const checkedOut = !!myAttendance?.checkoutTime;
 
   const student = loggedIn;
   const isSchoolDay = dow && student?.days[dow];
@@ -112,8 +108,6 @@ export default function StudentPage() {
   const handleLogout = () => {
     setLoggedIn(null);
     sessionStorage.removeItem('student_session');
-    setCheckedIn(false);
-    setCheckedOut(false);
     setEmail('');
     setPassword('');
     setDxStatus('idle');
@@ -123,7 +117,6 @@ export default function StudentPage() {
     if (!student || !dow) return;
     setDxStatus('loading');
     await checkIn(student.name, student.grade, today, nowTime());
-    setCheckedIn(true);
     if (qrData?.tokou_url && student.dx_email) {
       const ok = await dxCheckIn(student.dx_email, qrData.tokou_url);
       setDxStatus(ok ? 'ok' : 'fail');
@@ -136,7 +129,6 @@ export default function StudentPage() {
     if (!student) return;
     setDxStatus('loading');
     await checkOut(student.name, today, nowTime());
-    setCheckedOut(true);
     if (qrData?.gekou_url && student.dx_email) {
       const ok = await dxCheckIn(student.dx_email, qrData.gekou_url);
       setDxStatus(ok ? 'ok' : 'fail');
@@ -273,35 +265,41 @@ export default function StudentPage() {
         <StudentHeader student={student!} onLogout={handleLogout} />
 
         {/* 出席アクション */}
-        <div className="mt-5">
-          {!checkedIn ? (
-            <button
-              onClick={handleCheckIn}
-              disabled={dxStatus === 'loading'}
-              className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-base hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-60 shadow-md shadow-blue-200"
-            >
-              {dxStatus === 'loading' ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  younetDXに出席登録中...
-                </span>
-              ) : '登校しました'}
-            </button>
+        <div className="mt-5 space-y-3">
+          {attendanceLoading ? (
+            <div className="text-center py-4 text-[var(--ink3)] text-sm">出席状況を確認中...</div>
           ) : (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-3 rounded-xl border border-emerald-200">
-                <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white text-sm">✓</div>
-                <div>
-                  <div className="text-sm font-bold text-emerald-700">登校済み</div>
-                  <div className="text-xs text-emerald-600">{myAttendance?.checkinTime || ''} に登校を記録しました</div>
+            <>
+              {/* 登校ボタン / 登校済み表示 */}
+              {!checkedIn ? (
+                <button
+                  onClick={handleCheckIn}
+                  disabled={dxStatus === 'loading'}
+                  className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-base hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-60 shadow-md shadow-blue-200"
+                >
+                  {dxStatus === 'loading' ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      younetDXに出席登録中...
+                    </span>
+                  ) : '登校しました'}
+                </button>
+              ) : (
+                <div className="flex items-center gap-3 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-3 rounded-xl border border-emerald-200">
+                  <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white text-sm shrink-0">✓</div>
+                  <div>
+                    <div className="text-sm font-bold text-emerald-700">登校済み</div>
+                    <div className="text-xs text-emerald-600">{myAttendance?.checkinTime || ''} に登校を記録しました</div>
+                  </div>
                 </div>
-              </div>
+              )}
 
+              {/* 下校ボタン / 下校済み表示 */}
               {!checkedOut ? (
                 <button
                   onClick={handleCheckOut}
-                  disabled={dxStatus === 'loading'}
-                  className="w-full py-3 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-xl font-bold text-sm hover:from-rose-600 hover:to-red-600 transition-all disabled:opacity-60 shadow-md shadow-rose-200"
+                  disabled={dxStatus === 'loading' || !checkedIn}
+                  className="w-full py-3 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-xl font-bold text-sm hover:from-rose-600 hover:to-red-600 transition-all disabled:opacity-40 shadow-md shadow-rose-200"
                 >
                   {dxStatus === 'loading' ? (
                     <span className="flex items-center justify-center gap-2">
@@ -312,14 +310,14 @@ export default function StudentPage() {
                 </button>
               ) : (
                 <div className="flex items-center gap-3 bg-[var(--surface2)] px-4 py-3 rounded-xl border border-[var(--border)]">
-                  <div className="w-8 h-8 rounded-full bg-[var(--ink3)] flex items-center justify-center text-white text-sm">✓</div>
+                  <div className="w-8 h-8 rounded-full bg-[var(--ink3)] flex items-center justify-center text-white text-sm shrink-0">✓</div>
                   <div>
                     <div className="text-sm font-bold text-[var(--ink2)]">下校済み</div>
                     <div className="text-xs text-[var(--ink3)]">{myAttendance?.checkoutTime || ''} に下校を記録しました</div>
                   </div>
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
 
