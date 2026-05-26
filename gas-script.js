@@ -268,24 +268,74 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ok:false, msg:'student not found'})).setMimeType(ContentService.MimeType.JSON);
     }
     try {
-      // younetDXにログイン
-      const loginUrl = 'https://you-net-dx.jp/yushi/student/index.php';
-      const loginResp = UrlFetchApp.fetch(loginUrl, {
-        method: 'post',
-        payload: { login_id: creds.email, password: creds.password },
-        followRedirects: false,
-        muteHttpExceptions: true
-      });
-      // セッションcookieを取得
-      const setCookie = loginResp.getHeaders()['Set-Cookie'] || '';
-      const cookies = setCookie.split(',').map(c => c.split(';')[0].trim()).join('; ');
-      // 出席URLにアクセス
-      const attendResp = UrlFetchApp.fetch(dxUrl, {
-        headers: { 'Cookie': cookies },
+      // ステップ1: ログインページにGET（セッションcookie取得）
+      var getResp = UrlFetchApp.fetch('https://you-net-dx.jp/yushi/student/index.php', {
         followRedirects: true,
         muteHttpExceptions: true
       });
-      const code = attendResp.getResponseCode();
+      var getCookies = getResp.getAllHeaders()['Set-Cookie'];
+      var sessionCookie = '';
+      if (getCookies) {
+        if (typeof getCookies === 'string') {
+          sessionCookie = getCookies.split(';')[0];
+        } else {
+          sessionCookie = getCookies.map(function(c) { return c.split(';')[0]; }).join('; ');
+        }
+      }
+
+      // ステップ2: login.phpにPOST（login_flag含む）
+      var loginResp = UrlFetchApp.fetch('https://you-net-dx.jp/yushi/student/pages/login.php', {
+        method: 'post',
+        payload: {
+          login_id: creds.email,
+          password: creds.password,
+          login_flag: ''
+        },
+        headers: { 'Cookie': sessionCookie },
+        followRedirects: false,
+        muteHttpExceptions: true
+      });
+      // ログイン後の新しいセッションcookieを取得
+      var loginCookies = loginResp.getAllHeaders()['Set-Cookie'];
+      if (loginCookies) {
+        if (typeof loginCookies === 'string') {
+          sessionCookie = loginCookies.split(';')[0];
+        } else {
+          sessionCookie = loginCookies.map(function(c) { return c.split(';')[0]; }).join('; ');
+        }
+      }
+
+      var loginCode = loginResp.getResponseCode();
+
+      // ステップ3: 出席ページにGET（student_idを取得）
+      var attendPage = UrlFetchApp.fetch(dxUrl, {
+        headers: { 'Cookie': sessionCookie },
+        followRedirects: true,
+        muteHttpExceptions: true
+      });
+      var pageHtml = attendPage.getContentText();
+      var sidMatch = pageHtml.match(/name="student_id" value="(\d+)"/);
+      var studentId = sidMatch ? sidMatch[1] : '';
+      if (!studentId) {
+        return ContentService.createTextOutput(JSON.stringify({ok:false, msg:'no student_id'})).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      // ステップ4: 出席フォームをPOST送信（これが実際の登録）
+      var typeMatch = dxUrl.match(/type=(\d)/);
+      var studioMatch = dxUrl.match(/studio_id=(\d)/);
+      var submitResp = UrlFetchApp.fetch(dxUrl, {
+        method: 'post',
+        payload: {
+          student_id: studentId,
+          type: typeMatch ? typeMatch[1] : '0',
+          studio_id: studioMatch ? studioMatch[1] : '3',
+          attend: '送信する'
+        },
+        headers: { 'Cookie': sessionCookie },
+        followRedirects: true,
+        muteHttpExceptions: true
+      });
+      var code = submitResp.getResponseCode();
       return ContentService.createTextOutput(JSON.stringify({ok: code >= 200 && code < 400, code: code})).setMimeType(ContentService.MimeType.JSON);
     } catch (err) {
       return ContentService.createTextOutput(JSON.stringify({ok:false, msg: err.toString()})).setMimeType(ContentService.MimeType.JSON);
