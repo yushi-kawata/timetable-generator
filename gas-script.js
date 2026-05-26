@@ -88,10 +88,21 @@ function doGet(e) {
     const records = data.slice(1).map(row => {
       const obj = {};
       headers.forEach((h, i) => obj[h] = row[i]);
+      var sel = {};
+      ['月','火','水','木','金'].forEach(function(d) {
+        var v = obj[d] || '';
+        if (typeof v === 'string' && v.indexOf('{') === 0) {
+          try { sel[d] = JSON.parse(v); } catch(ex) { sel[d] = {}; }
+        } else if (v) {
+          sel[d] = { 2: v };
+        } else {
+          sel[d] = {};
+        }
+      });
       return {
         week: obj.week || '',
         name: obj.name || '',
-        selections: { 月: obj['月'] || '', 火: obj['火'] || '', 水: obj['水'] || '', 木: obj['木'] || '', 金: obj['金'] || '' }
+        selections: sel
       };
     }).filter(r => !week || r.week === week);
     return ContentService.createTextOutput(JSON.stringify(records)).setMimeType(ContentService.MimeType.JSON);
@@ -210,7 +221,14 @@ function doPost(e) {
       }
     }
     const sel = body.selections || {};
-    sheet.appendRow([body.week, body.name, sel['月'] || '', sel['火'] || '', sel['水'] || '', sel['木'] || '', sel['金'] || '']);
+    sheet.appendRow([
+      body.week, body.name,
+      JSON.stringify(sel['月'] || {}),
+      JSON.stringify(sel['火'] || {}),
+      JSON.stringify(sel['水'] || {}),
+      JSON.stringify(sel['木'] || {}),
+      JSON.stringify(sel['金'] || {})
+    ]);
     return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
   }
 

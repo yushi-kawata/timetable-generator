@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/useMasterStore';
-import { DAY_ICONS, ROOMS, PERIODS, GRADE_ROOM } from '../../types/master';
+import { DAY_ICONS, ROOMS, PERIODS, GRADE_ROOM, SELECTABLE_PERIODS } from '../../types/master';
 import type { DayOfWeek, Student } from '../../types/master';
 
 const DAY_STYLES: Record<DayOfWeek, { header: string; gradient: string }> = {
@@ -85,9 +85,10 @@ export default function StudentPage() {
 
   const getRoom = (period: number): string => {
     if (!student || !dow) return '';
-    if (period === 2) {
+    if (SELECTABLE_PERIODS.includes(period)) {
       const p2 = period2.find(p => p.week === weekKey && p.name === student.name);
-      return p2?.selections[dow] || '';
+      const daySelections = p2?.selections[dow];
+      return (daySelections as Record<number, string>)?.[period] || '';
     }
     if (student.classroom === 'B教室') return 'B教室';
     return GRADE_ROOM[student.grade] || '';
@@ -144,19 +145,22 @@ export default function StudentPage() {
     }
   };
 
-  const handlePeriod2Select = async (room: string) => {
+  const handlePeriodSelect = async (period: number, room: string) => {
     if (!dow || !student) return;
     const existing = period2.find(p => p.week === weekKey && p.name === student.name);
-    const selections = { ...existing?.selections, [dow]: room };
+    const daySelections = { ...((existing?.selections[dow] || {}) as Record<number, string>), [period]: room };
+    if (!room) delete daySelections[period];
+    const selections = { ...existing?.selections, [dow]: daySelections };
     await savePeriod2(weekKey, student.name, selections);
   };
 
-  const period2Options = dow ? ROOMS.map(room => ({
-    room,
-    subject: tt[dow]?.[room]?.[2] || '',
-  })).filter(o => o.subject) : [];
-
-  const currentP2Room = getRoom(2);
+  const getPeriodOptions = (period: number) => {
+    if (!dow) return [];
+    return ROOMS.map(room => ({
+      room,
+      subject: tt[dow]?.[room]?.[period] || '',
+    })).filter(o => o.subject);
+  };
 
   // ══════════════════════════════════
   // ── ログイン画面 ──
@@ -360,8 +364,9 @@ export default function StudentPage() {
             const p = PERIODS[i];
             const room = getRoom(i);
             const subj = room ? (tt[dow]?.[room]?.[i] || '—') : '';
-            const isPeriod2 = i === 2;
-            const needsSelection = isPeriod2 && !currentP2Room;
+            const isSelectable = SELECTABLE_PERIODS.includes(i);
+            const needsSelection = isSelectable && !room;
+            const options = isSelectable ? getPeriodOptions(i) : [];
 
             return (
               <div key={i} className={`grid grid-cols-[72px_1fr] border-t border-[var(--border)] transition-colors ${needsSelection ? 'bg-amber-50' : 'hover:bg-[var(--surface2)]'}`}>
@@ -372,12 +377,12 @@ export default function StudentPage() {
                 <div className="p-3 flex flex-col justify-center">
                   {needsSelection ? (
                     <div>
-                      <div className="text-xs font-bold text-amber-600 mb-2">2限目の教室を選んでください</div>
+                      <div className="text-xs font-bold text-amber-600 mb-2">{i}限目の教室を選んでください</div>
                       <div className="flex gap-2 flex-wrap">
-                        {period2Options.map(o => (
+                        {options.map(o => (
                           <button
                             key={o.room}
-                            onClick={() => handlePeriod2Select(o.room)}
+                            onClick={() => handlePeriodSelect(i, o.room)}
                             className="px-3 py-1.5 rounded-lg border-2 border-[var(--border)] bg-white text-xs font-bold hover:border-[var(--accent)] hover:bg-blue-50 hover:shadow-sm transition-all"
                           >
                             {o.room.replace('教室', '').replace('（', '(').replace('）', ')')} {o.subject}
@@ -390,9 +395,9 @@ export default function StudentPage() {
                       <div className="text-sm font-bold">{subj}</div>
                       <div className="text-[11px] text-[var(--ink3)]">
                         {room}
-                        {isPeriod2 && currentP2Room && (
+                        {isSelectable && room && (
                           <button
-                            onClick={() => handlePeriod2Select('')}
+                            onClick={() => handlePeriodSelect(i, '')}
                             className="ml-2 text-[var(--accent)] hover:underline"
                           >
                             変更

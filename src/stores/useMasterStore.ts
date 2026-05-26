@@ -88,7 +88,7 @@ interface AppState {
   saveStudents: (students: (Student & { dx_password?: string })[]) => Promise<void>;
   checkIn: (name: string, grade: string, date: string, time: string) => Promise<void>;
   checkOut: (name: string, date: string, time: string) => Promise<void>;
-  savePeriod2: (week: string, name: string, selections: Partial<Record<string, string>>) => Promise<void>;
+  savePeriod2: (week: string, name: string, selections: Partial<Record<string, Record<number, string>>>) => Promise<void>;
 
   authStudent: (email: string, password: string) => Promise<Student | null>;
   dxCheckIn: (email: string, dxUrl: string) => Promise<boolean>;
