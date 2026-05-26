@@ -3,6 +3,26 @@ import { persist } from 'zustand/middleware';
 import type { TimetableTemplate, StudentRecord, Student, AttendanceRecord, Period2Selection } from '../types/master';
 import { DEFAULT_TT } from '../types/master';
 
+// GAS側は "course" カラム、フロント側は "classroom" フィールド
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapStudentFromGas(s: any): Student {
+  return {
+    name: s.name || '',
+    grade: s.grade || '',
+    classroom: s.course === 'Growth' ? 'B教室' : (s.course || '学年教室'),
+    days: s.days || { 月: false, 火: false, 水: false, 木: false, 金: false },
+  };
+}
+
+function mapStudentToGas(s: Student) {
+  return {
+    name: s.name,
+    grade: s.grade,
+    course: s.classroom === 'B教室' ? 'Growth' : '通常',
+    days: s.days,
+  };
+}
+
 // GAS WebApp URL
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwW8j8jnGDBD8PKO_EEfCOFikdhkoSiFcGlRVi0hSU99fQ2xC0D2C_MLCwqIQmIUc7R/exec';
 const GAS_URL = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
@@ -111,7 +131,7 @@ export const useAppStore = create<AppState>()(
           set({
             records: [...seen.values()].sort((a, b) => b.id - a.id),
             tt: ttData && typeof ttData === 'object' && ttData['月'] ? ttData : get().tt,
-            students: Array.isArray(studentsData) ? studentsData : get().students,
+            students: Array.isArray(studentsData) ? studentsData.map(mapStudentFromGas) : get().students,
             loading: false,
           });
         } catch {
@@ -122,7 +142,7 @@ export const useAppStore = create<AppState>()(
       fetchStudents: async () => {
         const data = await gasGet('getStudents');
         if (Array.isArray(data)) {
-          set({ students: data });
+          set({ students: data.map(mapStudentFromGas) });
         }
       },
 
@@ -168,7 +188,7 @@ export const useAppStore = create<AppState>()(
 
       saveStudents: async (students: Student[]) => {
         set({ students });
-        await gasPost({ action: 'saveStudents', data: students });
+        await gasPost({ action: 'saveStudents', data: students.map(mapStudentToGas) });
       },
 
       checkIn: async (name, grade, date, time) => {
