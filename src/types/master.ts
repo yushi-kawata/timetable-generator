@@ -27,6 +27,7 @@ export type Student = {
   name: string;
   grade: string;       // "1年" | "2年" | "3年"
   classroom: string;   // "学年教室" | "B教室"
+  dx_email: string;    // younetDXログインメール
   days: Record<DayOfWeek, boolean>;
 };
 

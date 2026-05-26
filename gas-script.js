@@ -58,6 +58,7 @@ function doGet(e) {
         name: obj.name || '',
         grade: obj.grade || '',
         course: obj.course || '通常',
+        dx_email: obj.dx_email || '',
         days: { 月: obj['月'], 火: obj['火'], 水: obj['水'], 木: obj['木'], 金: obj['金'] }
       };
     });
@@ -155,12 +156,13 @@ function doPost(e) {
   if (body.action === 'saveStudents') {
     const sheet = getOrCreateSheet(SHEET_STUDENTS);
     sheet.clear();
-    sheet.appendRow(['name', 'grade', 'course', '月', '火', '水', '木', '金']);
+    sheet.appendRow(['name', 'grade', 'course', '月', '火', '水', '木', '金', 'dx_email', 'dx_password']);
     (body.data || []).forEach(s => {
       sheet.appendRow([
         s.name, s.grade, s.course || '通常',
         s.days['月'] ? '○' : '', s.days['火'] ? '○' : '',
-        s.days['水'] ? '○' : '', s.days['木'] ? '○' : '', s.days['金'] ? '○' : ''
+        s.days['水'] ? '○' : '', s.days['木'] ? '○' : '', s.days['金'] ? '○' : '',
+        s.dx_email || '', s.dx_password || ''
       ]);
     });
     return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
@@ -210,6 +212,84 @@ function doPost(e) {
     const sel = body.selections || {};
     sheet.appendRow([body.week, body.name, sel['月'] || '', sel['火'] || '', sel['水'] || '', sel['木'] || '', sel['金'] || '']);
     return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (body.action === 'authStudent') {
+    const email = (body.email || '').trim().toLowerCase();
+    const password = body.password || '';
+    const sheet = getOrCreateSheet(SHEET_STUDENTS);
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return ContentService.createTextOutput(JSON.stringify({ok:false, msg:'no students'})).setMimeType(ContentService.MimeType.JSON);
+    }
+    const headers = data[0];
+    for (let i = 1; i < data.length; i++) {
+      const obj = {};
+      headers.forEach((h, j) => obj[h] = data[i][j]);
+      const dxEmail = (obj.dx_email || '').toString().trim().toLowerCase();
+      const dxPw = (obj.dx_password || '').toString();
+      if (dxEmail === email && dxPw === password) {
+        ['月','火','水','木','金'].forEach(d => { obj[d] = obj[d] === true || obj[d] === '○' || obj[d] === 'TRUE'; });
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: true,
+          student: {
+            name: obj.name || '',
+            grade: obj.grade || '',
+            course: obj.course || '通常',
+            dx_email: dxEmail,
+            days: { '月': obj['月'], '火': obj['火'], '水': obj['水'], '木': obj['木'], '金': obj['金'] }
+          }
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ok:false, msg:'auth failed'})).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (body.action === 'dxCheckIn') {
+    const email = (body.email || '').trim().toLowerCase();
+    const dxUrl = body.dxUrl || '';
+    if (!dxUrl) {
+      return ContentService.createTextOutput(JSON.stringify({ok:false, msg:'no dxUrl'})).setMimeType(ContentService.MimeType.JSON);
+    }
+    // studentsシートから認証情報を取得
+    const sheet = getOrCreateSheet(SHEET_STUDENTS);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    let creds = null;
+    for (let i = 1; i < data.length; i++) {
+      const obj = {};
+      headers.forEach((h, j) => obj[h] = data[i][j]);
+      if ((obj.dx_email || '').toString().trim().toLowerCase() === email) {
+        creds = { email: obj.dx_email.toString(), password: (obj.dx_password || '').toString() };
+        break;
+      }
+    }
+    if (!creds) {
+      return ContentService.createTextOutput(JSON.stringify({ok:false, msg:'student not found'})).setMimeType(ContentService.MimeType.JSON);
+    }
+    try {
+      // younetDXにログイン
+      const loginUrl = 'https://you-net-dx.jp/yushi/student/index.php';
+      const loginResp = UrlFetchApp.fetch(loginUrl, {
+        method: 'post',
+        payload: { login_id: creds.email, password: creds.password },
+        followRedirects: false,
+        muteHttpExceptions: true
+      });
+      // セッションcookieを取得
+      const setCookie = loginResp.getHeaders()['Set-Cookie'] || '';
+      const cookies = setCookie.split(',').map(c => c.split(';')[0].trim()).join('; ');
+      // 出席URLにアクセス
+      const attendResp = UrlFetchApp.fetch(dxUrl, {
+        headers: { 'Cookie': cookies },
+        followRedirects: true,
+        muteHttpExceptions: true
+      });
+      const code = attendResp.getResponseCode();
+      return ContentService.createTextOutput(JSON.stringify({ok: code >= 200 && code < 400, code: code})).setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({ok:false, msg: err.toString()})).setMimeType(ContentService.MimeType.JSON);
+    }
   }
 
   return ContentService.createTextOutput(JSON.stringify({ok:false})).setMimeType(ContentService.MimeType.JSON);
