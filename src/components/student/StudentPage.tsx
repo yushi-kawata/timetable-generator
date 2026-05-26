@@ -304,12 +304,8 @@ export default function StudentPage() {
               {!checkedOut ? (
                 <button
                   onClick={handleCheckOut}
-                  disabled={checkOutLoading || !checkedIn}
-                  className={`w-full py-3 rounded-xl font-bold text-sm transition-all shadow-md ${
-                    checkedIn
-                      ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white hover:from-rose-600 hover:to-red-600 shadow-rose-200 disabled:opacity-60'
-                      : 'bg-gray-200 text-gray-400 shadow-none'
-                  }`}
+                  disabled={checkOutLoading}
+                  className="w-full py-3 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-xl font-bold text-sm hover:from-rose-600 hover:to-red-600 transition-all disabled:opacity-60 shadow-md shadow-rose-200"
                 >
                   {checkOutLoading ? (
                     <span className="flex items-center justify-center gap-2">
