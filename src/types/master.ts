@@ -12,10 +12,41 @@ export const PERIODS = [
   { label: '5限', time: '14:00〜14:50', isSHR: false },
 ];
 
+/** 学年 → デフォルト教室 */
+export const GRADE_ROOM: Record<string, string> = {
+  '1年': 'D教室（1年）',
+  '2年': 'A教室（2年）',
+  '3年': 'C教室（3年）',
+};
+
 /** 時間割テンプレート: TT[曜日][教室][時限index] = 科目名 */
 export type TimetableTemplate = Record<string, Record<string, string[]>>;
 
-/** 生徒の申告データ */
+/** 生徒マスターデータ */
+export type Student = {
+  name: string;
+  grade: string;       // "1年" | "2年" | "3年"
+  course: string;      // "通常" | "Growth"
+  days: Record<DayOfWeek, boolean>;
+};
+
+/** 出席記録 */
+export type AttendanceRecord = {
+  date: string;        // "2026-05-26"
+  name: string;
+  grade: string;
+  checkinTime: string; // "09:15"
+  checkoutTime: string; // "14:55" or ""
+};
+
+/** 2限目選択 */
+export type Period2Selection = {
+  week: string;        // "2026-05-25" (月曜の日付)
+  name: string;
+  selections: Partial<Record<DayOfWeek, string>>; // 曜日 → 教室名
+};
+
+/** 生徒の申告データ（レガシー互換） */
 export type StudentRecord = {
   id: number;
   week: string;        // "2026-04-06" (月曜の日付)

@@ -1,16 +1,20 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { TimetableTemplate, StudentRecord } from '../types/master';
+import type { TimetableTemplate, StudentRecord, Student, AttendanceRecord, Period2Selection } from '../types/master';
 import { DEFAULT_TT } from '../types/master';
 
 // GAS WebApp URL
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwW8j8jnGDBD8PKO_EEfCOFikdhkoSiFcGlRVi0hSU99fQ2xC0D2C_MLCwqIQmIUc7R/exec';
 const GAS_URL = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
 
-async function gasGet(action: string) {
+// QR GAS URL
+const QR_GAS_URL = 'https://script.google.com/macros/s/AKfycbxVpj2Uyi_20_eO_JbTM0fVcGK0znTzk7Odbuf6xz0Gs_5V6DYS1nU30xooIVdiKsADpQ/exec';
+
+async function gasGet(action: string, params: Record<string, string> = {}) {
   if (!GAS_URL) return null;
   try {
-    const res = await fetch(`${GAS_URL}?action=${action}`, { redirect: 'follow' });
+    const qs = new URLSearchParams({ action, ...params }).toString();
+    const res = await fetch(`${GAS_URL}?${qs}`, { redirect: 'follow' });
     return res.json();
   } catch { return null; }
 }
@@ -27,19 +31,41 @@ async function gasPost(body: unknown) {
   } catch {}
 }
 
+interface QrData {
+  campus: string;
+  date: string;
+  tokou_qr: string;
+  gekou_qr: string;
+  updated_at: string;
+}
+
 interface AppState {
   tt: TimetableTemplate;
   records: StudentRecord[];
+  students: Student[];
+  attendance: AttendanceRecord[];
+  period2: Period2Selection[];
+  qrData: QrData | null;
   loading: boolean;
   gasUrl: string;
 
   fetchAll: () => Promise<void>;
+  fetchStudents: () => Promise<void>;
+  fetchAttendance: (date: string) => Promise<void>;
+  fetchPeriod2: (week: string) => Promise<void>;
+  fetchQrData: () => Promise<void>;
   setGasUrl: (url: string) => void;
 
   setTT: (tt: TimetableTemplate) => void;
   updateTTCell: (day: string, room: string, period: number, value: string) => void;
   saveTT: () => Promise<void>;
 
+  saveStudents: (students: Student[]) => Promise<void>;
+  checkIn: (name: string, grade: string, date: string, time: string) => Promise<void>;
+  checkOut: (name: string, date: string, time: string) => Promise<void>;
+  savePeriod2: (week: string, name: string, selections: Partial<Record<string, string>>) => Promise<void>;
+
+  // レガシー互換
   addRecord: (r: Omit<StudentRecord, 'id'>) => Promise<void>;
   deleteRecord: (id: number) => Promise<void>;
   clearRecords: () => Promise<void>;
@@ -50,13 +76,16 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       tt: JSON.parse(JSON.stringify(DEFAULT_TT)),
       records: [],
+      students: [],
+      attendance: [],
+      period2: [],
+      qrData: null,
       loading: false,
       gasUrl: GAS_URL,
 
       setGasUrl: (url: string) => {
         localStorage.setItem('gas_url', url);
         set({ gasUrl: url });
-        // URLが変わったらリロードして反映
         window.location.reload();
       },
 
@@ -65,11 +94,11 @@ export const useAppStore = create<AppState>()(
         if (!url) { set({ loading: false }); return; }
         set({ loading: true });
         try {
-          const [recs, ttData] = await Promise.all([
+          const [recs, ttData, studentsData] = await Promise.all([
             gasGet('getRecs'),
             gasGet('getTT'),
+            gasGet('getStudents'),
           ]);
-          // 同名・同週の重複を除去（最新のみ残す）
           const rawRecs: StudentRecord[] = Array.isArray(recs) ? recs : [];
           const seen = new Map<string, StudentRecord>();
           for (const r of rawRecs) {
@@ -82,11 +111,43 @@ export const useAppStore = create<AppState>()(
           set({
             records: [...seen.values()].sort((a, b) => b.id - a.id),
             tt: ttData && typeof ttData === 'object' && ttData['月'] ? ttData : get().tt,
+            students: Array.isArray(studentsData) ? studentsData : get().students,
             loading: false,
           });
         } catch {
           set({ loading: false });
         }
+      },
+
+      fetchStudents: async () => {
+        const data = await gasGet('getStudents');
+        if (Array.isArray(data)) {
+          set({ students: data });
+        }
+      },
+
+      fetchAttendance: async (date: string) => {
+        const data = await gasGet('getAttendance', { date });
+        if (Array.isArray(data)) {
+          set({ attendance: data });
+        }
+      },
+
+      fetchPeriod2: async (week: string) => {
+        const data = await gasGet('getPeriod2', { week });
+        if (Array.isArray(data)) {
+          set({ period2: data });
+        }
+      },
+
+      fetchQrData: async () => {
+        try {
+          const res = await fetch(`${QR_GAS_URL}?action=api`, { redirect: 'follow' });
+          const data = await res.json();
+          if (data && data.tokou_qr) {
+            set({ qrData: data });
+          }
+        } catch {}
       },
 
       setTT: (tt) => set({ tt }),
@@ -105,9 +166,45 @@ export const useAppStore = create<AppState>()(
         await gasPost({ action: 'saveTT', data: tt });
       },
 
+      saveStudents: async (students: Student[]) => {
+        set({ students });
+        await gasPost({ action: 'saveStudents', data: students });
+      },
+
+      checkIn: async (name, grade, date, time) => {
+        // ローカル即時反映
+        set((s) => {
+          const existing = s.attendance.find(a => a.date === date && a.name === name);
+          if (existing) return s;
+          return {
+            attendance: [...s.attendance, { date, name, grade, checkinTime: time, checkoutTime: '' }],
+          };
+        });
+        await gasPost({ action: 'checkIn', name, grade, date, time });
+      },
+
+      checkOut: async (name, date, time) => {
+        set((s) => ({
+          attendance: s.attendance.map(a =>
+            a.date === date && a.name === name ? { ...a, checkoutTime: time } : a
+          ),
+        }));
+        await gasPost({ action: 'checkOut', name, date, time });
+      },
+
+      savePeriod2: async (week, name, selections) => {
+        set((s) => ({
+          period2: [
+            ...s.period2.filter(p => !(p.week === week && p.name === name)),
+            { week, name, selections },
+          ],
+        }));
+        await gasPost({ action: 'savePeriod2', week, name, selections });
+      },
+
+      // レガシー互換
       addRecord: async (r) => {
         const record = { ...r, id: Date.now() };
-        // 同名・同週の既存レコードを削除（上書き）
         const old = get().records.filter(
           (x) => x.name === record.name && x.week === record.week
         );
@@ -134,7 +231,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'timetable-system-v5',
-      partialize: (s) => ({ tt: s.tt, records: s.records }),
+      partialize: (s) => ({ tt: s.tt, records: s.records, students: s.students }),
     }
   )
 );

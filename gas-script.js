@@ -11,6 +11,9 @@
 
 const SHEET_RECORDS = 'records';
 const SHEET_TT = 'timetable';
+const SHEET_STUDENTS = 'students';
+const SHEET_ATTENDANCE = 'attendance';
+const SHEET_PERIOD2 = 'period2';
 
 function getOrCreateSheet(name) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -39,6 +42,58 @@ function doGet(e) {
       return obj;
     });
     return ContentService.createTextOutput(JSON.stringify(recs)).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'getStudents') {
+    const sheet = getOrCreateSheet(SHEET_STUDENTS);
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return ContentService.createTextOutput('[]').setMimeType(ContentService.MimeType.JSON);
+    const headers = data[0];
+    const students = data.slice(1).map(row => {
+      const obj = {};
+      headers.forEach((h, i) => obj[h] = row[i]);
+      // 曜日フラグをbooleanに
+      ['月','火','水','木','金'].forEach(d => { obj[d] = obj[d] === true || obj[d] === '○' || obj[d] === 'TRUE'; });
+      return {
+        name: obj.name || '',
+        grade: obj.grade || '',
+        course: obj.course || '通常',
+        days: { 月: obj['月'], 火: obj['火'], 水: obj['水'], 木: obj['木'], 金: obj['金'] }
+      };
+    });
+    return ContentService.createTextOutput(JSON.stringify(students)).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'getAttendance') {
+    const date = e.parameter.date || '';
+    const sheet = getOrCreateSheet(SHEET_ATTENDANCE);
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return ContentService.createTextOutput('[]').setMimeType(ContentService.MimeType.JSON);
+    const headers = data[0];
+    const records = data.slice(1).map(row => {
+      const obj = {};
+      headers.forEach((h, i) => obj[h] = row[i]);
+      return obj;
+    }).filter(r => !date || r.date === date);
+    return ContentService.createTextOutput(JSON.stringify(records)).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === 'getPeriod2') {
+    const week = e.parameter.week || '';
+    const sheet = getOrCreateSheet(SHEET_PERIOD2);
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return ContentService.createTextOutput('[]').setMimeType(ContentService.MimeType.JSON);
+    const headers = data[0];
+    const records = data.slice(1).map(row => {
+      const obj = {};
+      headers.forEach((h, i) => obj[h] = row[i]);
+      return {
+        week: obj.week || '',
+        name: obj.name || '',
+        selections: { 月: obj['月'] || '', 火: obj['火'] || '', 水: obj['水'] || '', 木: obj['木'] || '', 金: obj['金'] || '' }
+      };
+    }).filter(r => !week || r.week === week);
+    return ContentService.createTextOutput(JSON.stringify(records)).setMimeType(ContentService.MimeType.JSON);
   }
 
   if (action === 'getTT') {
@@ -94,6 +149,66 @@ function doPost(e) {
     sheet.clear();
     sheet.appendRow(['data']);
     sheet.appendRow([JSON.stringify(body.data)]);
+    return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (body.action === 'saveStudents') {
+    const sheet = getOrCreateSheet(SHEET_STUDENTS);
+    sheet.clear();
+    sheet.appendRow(['name', 'grade', 'course', '月', '火', '水', '木', '金']);
+    (body.data || []).forEach(s => {
+      sheet.appendRow([
+        s.name, s.grade, s.course || '通常',
+        s.days['月'] ? '○' : '', s.days['火'] ? '○' : '',
+        s.days['水'] ? '○' : '', s.days['木'] ? '○' : '', s.days['金'] ? '○' : ''
+      ]);
+    });
+    return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (body.action === 'checkIn') {
+    const sheet = getOrCreateSheet(SHEET_ATTENDANCE);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(['date', 'name', 'grade', 'checkinTime', 'checkoutTime']);
+    }
+    // 同日同名の既存レコードを探す
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === body.date && data[i][1] === body.name) {
+        // 既に登校済み → 更新しない
+        return ContentService.createTextOutput(JSON.stringify({ok:true, message:'already checked in'})).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    sheet.appendRow([body.date, body.name, body.grade || '', body.time || '', '']);
+    return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (body.action === 'checkOut') {
+    const sheet = getOrCreateSheet(SHEET_ATTENDANCE);
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === body.date && data[i][1] === body.name) {
+        sheet.getRange(i + 1, 5).setValue(body.time || '');
+        return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ok:false, message:'no checkin record'})).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (body.action === 'savePeriod2') {
+    const sheet = getOrCreateSheet(SHEET_PERIOD2);
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(['week', 'name', '月', '火', '水', '木', '金']);
+    }
+    // 同週同名の既存レコードを削除
+    const data = sheet.getDataRange().getValues();
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (data[i][0] === body.week && data[i][1] === body.name) {
+        sheet.deleteRow(i + 1);
+      }
+    }
+    const sel = body.selections || {};
+    sheet.appendRow([body.week, body.name, sel['月'] || '', sel['火'] || '', sel['水'] || '', sel['木'] || '', sel['金'] || '']);
     return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
   }
 

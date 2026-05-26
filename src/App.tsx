@@ -47,7 +47,7 @@ export default function App() {
       <header className="bg-[var(--ink)] text-white px-4 sm:px-8 py-4 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-base font-bold flex items-center gap-2">
-            <span>📅</span> 通信制高校 時間割システム
+            <span>📅</span> 通学生ポータル
           </h1>
           <span
             className={`text-[11px] font-bold px-3 py-1 rounded-full tracking-wide ${
