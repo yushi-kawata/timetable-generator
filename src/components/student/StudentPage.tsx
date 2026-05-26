@@ -74,7 +74,11 @@ export default function StudentPage() {
 
   const myAttendance = loggedIn ? attendance.find(a => a.date === today && a.name === loggedIn.name) : null;
   const checkedIn = !!myAttendance;
-  const checkedOut = !!myAttendance?.checkoutTime;
+  const checkedOut = !!(myAttendance?.checkoutTime);
+  // DXステータスをリセット（リロード後）
+  useEffect(() => {
+    if (checkedIn && dxStatus === 'idle') setDxStatus('ok');
+  }, [checkedIn]);
 
   const student = loggedIn;
   const isSchoolDay = dow && student?.days[dow];
@@ -297,9 +301,9 @@ export default function StudentPage() {
               {/* 下校ボタン / 下校済み表示 */}
               {!checkedOut ? (
                 <button
-                  onClick={handleCheckOut}
+                  onClick={checkedIn ? handleCheckOut : undefined}
                   disabled={dxStatus === 'loading' || !checkedIn}
-                  className="w-full py-3 bg-gradient-to-r from-rose-500 to-red-500 text-white rounded-xl font-bold text-sm hover:from-rose-600 hover:to-red-600 transition-all disabled:opacity-40 shadow-md shadow-rose-200"
+                  className={`w-full py-3 rounded-xl font-bold text-sm transition-all shadow-md ${checkedIn ? 'bg-gradient-to-r from-rose-500 to-red-500 text-white hover:from-rose-600 hover:to-red-600 shadow-rose-200 disabled:opacity-60' : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'}`}
                 >
                   {dxStatus === 'loading' ? (
                     <span className="flex items-center justify-center gap-2">
