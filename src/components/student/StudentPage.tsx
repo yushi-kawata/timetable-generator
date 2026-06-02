@@ -433,59 +433,81 @@ export default function StudentPage() {
 
 /* ── サブコンポーネント ── */
 
-const DAY_COLORS: Record<DayOfWeek, string> = {
-  月: 'bg-purple-600',
-  火: 'bg-amber-600',
-  水: 'bg-teal-600',
-  木: 'bg-blue-600',
-  金: 'bg-pink-600',
+const DAY_BG: Record<DayOfWeek, string> = {
+  月: 'bg-purple-700',
+  火: 'bg-amber-700',
+  水: 'bg-teal-700',
+  木: 'bg-blue-700',
+  金: 'bg-pink-700',
+};
+
+const ROOM_SHORT: Record<string, string> = {
+  'A教室（2年）': 'A(2年)',
+  'C教室（3年）': 'C(3年)',
+  'D教室（1年）': 'D(1年)',
+  'B教室': 'B教室',
 };
 
 function WeeklyTimetablePreview({ tt }: { tt: TimetableTemplate }) {
-  const defaultRoom = 'A教室（2年）';
-
   return (
     <div className="card shadow-lg shadow-stone-200/50">
-      <div className="card-title text-center">1週間の時間割（例：2年生）</div>
-      <div className="overflow-x-auto -mx-1">
-        <table className="w-full text-[11px] border-collapse">
+      <div className="card-title text-center">1週間の時間割</div>
+      <div className="overflow-x-auto -mx-2">
+        <table className="text-[10px] border-collapse min-w-[700px] w-full">
           <thead>
+            {/* 曜日ヘッダー */}
             <tr>
-              <th className="p-1.5 text-center text-[var(--ink3)] w-12"></th>
+              <th className="p-1 border border-[var(--border)]" rowSpan={2}></th>
               {DAYS.map(d => (
-                <th key={d} className="p-1.5 text-center">
-                  <span className={`inline-block text-white text-[10px] font-bold px-2 py-0.5 rounded-full ${DAY_COLORS[d]}`}>
-                    {DAY_ICONS[d]} {d}
-                  </span>
+                <th
+                  key={d}
+                  colSpan={ROOMS.length}
+                  className={`p-1.5 text-center text-white font-bold border border-[var(--border)] ${DAY_BG[d]}`}
+                >
+                  {DAY_ICONS[d]} {d}
                 </th>
               ))}
             </tr>
+            {/* 教室ヘッダー */}
+            <tr>
+              {DAYS.map(d =>
+                ROOMS.map(room => (
+                  <th
+                    key={`${d}-${room}`}
+                    className="p-1 text-center font-bold text-[var(--ink2)] border border-[var(--border)] bg-[var(--surface2)] whitespace-nowrap"
+                  >
+                    {ROOM_SHORT[room] || room}
+                  </th>
+                ))
+              )}
+            </tr>
           </thead>
           <tbody>
-            <tr className="border-t border-[var(--border)]">
-              <td className="p-1.5 text-center font-bold text-[var(--ink3)]">SHR</td>
-              {DAYS.map(d => (
-                <td key={d} className="p-1.5 text-center text-[var(--ink2)]">HR</td>
-              ))}
-            </tr>
             {[1, 2, 3, 4, 5].map(i => (
-              <tr key={i} className="border-t border-[var(--border)]">
-                <td className="p-1.5 text-center font-bold text-[var(--ink3)]">{i}限</td>
-                {DAYS.map(d => {
-                  const subj = tt[d]?.[defaultRoom]?.[i] || '';
-                  return (
-                    <td key={d} className={`p-1.5 text-center ${subj ? 'text-[var(--ink)]' : 'text-[var(--ink3)]'}`}>
-                      {subj || '—'}
-                    </td>
-                  );
-                })}
+              <tr key={i}>
+                <td className="p-1 text-center font-bold text-[var(--ink3)] border border-[var(--border)] bg-[var(--surface2)] whitespace-nowrap">
+                  {i}限
+                </td>
+                {DAYS.map(d =>
+                  ROOMS.map(room => {
+                    const subj = tt[d]?.[room]?.[i] || '';
+                    return (
+                      <td
+                        key={`${d}-${room}-${i}`}
+                        className={`p-1 text-center border border-[var(--border)] ${subj ? 'text-[var(--ink)]' : 'text-[var(--ink3)]'}`}
+                      >
+                        {subj || ''}
+                      </td>
+                    );
+                  })
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <div className="text-[10px] text-[var(--ink3)] text-center mt-2">
-        ログイン後、あなたの学年・教室に合わせた時間割が表示されます
+        横スクロールで全曜日を確認できます
       </div>
     </div>
   );
