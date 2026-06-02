@@ -5,12 +5,13 @@ import { DEFAULT_TT } from '../types/master';
 
 // GAS側は "course" カラム、フロント側は "classroom" フィールド
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapStudentFromGas(s: any): Student {
+function mapStudentFromGas(s: any): Student & { dx_password?: string } {
   return {
     name: s.name || '',
     grade: s.grade || '',
     classroom: s.course === 'Growth' ? 'B教室' : (s.course || '学年教室'),
     dx_email: s.dx_email || '',
+    dx_password: s.dx_password || '',
     days: s.days || { 月: false, 火: false, 水: false, 木: false, 金: false },
   };
 }
