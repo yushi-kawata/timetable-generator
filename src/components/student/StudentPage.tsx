@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/useMasterStore';
-import { DAY_ICONS, ROOMS, PERIODS, GRADE_ROOM, SELECTABLE_PERIODS } from '../../types/master';
-import type { DayOfWeek, Student } from '../../types/master';
+import { DAYS, DAY_ICONS, ROOMS, PERIODS, GRADE_ROOM, SELECTABLE_PERIODS } from '../../types/master';
+import type { DayOfWeek, Student, TimetableTemplate } from '../../types/master';
 
 const DAY_STYLES: Record<DayOfWeek, { header: string; gradient: string }> = {
   月: { header: 'bg-gradient-to-r from-purple-600 to-purple-500', gradient: 'from-purple-50 to-white' },
@@ -165,7 +165,7 @@ export default function StudentPage() {
   // ══════════════════════════════════
   if (!loggedIn) {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center">
+      <div className="min-h-[70vh] flex flex-col items-center justify-start pt-8">
         <div className="w-full max-w-sm">
           {/* ロゴ・タイトル */}
           <div className="text-center mb-8">
@@ -196,21 +196,27 @@ export default function StudentPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="example@yushi-kokusai.jp"
+                placeholder="y000000@yushi.ed.jp"
                 className="form-input w-full !max-w-none"
                 autoFocus
               />
             </div>
-            <div className="mb-5">
+            <div className="mb-4">
               <div className="form-label">パスワード</div>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="パスワード"
+                placeholder="y000000"
                 className="form-input w-full !max-w-none"
               />
+            </div>
+            <div className="mb-5 bg-stone-50 rounded-lg px-3 py-2 border border-stone-200">
+              <div className="text-[11px] text-[var(--ink3)]">
+                <span className="font-bold">ID例:</span> y000000@yushi.ed.jp / <span className="font-bold">パスワード例:</span> y000000
+              </div>
+              <div className="text-[10px] text-[var(--ink3)] mt-0.5">younetDXと同じID・パスワードです</div>
             </div>
             {loginError && (
               <div className="text-sm text-red-600 mb-4 bg-red-50 px-3 py-2 rounded-lg">{loginError}</div>
@@ -228,6 +234,11 @@ export default function StudentPage() {
               ) : 'ログイン'}
             </button>
           </div>
+        </div>
+
+        {/* 1週間の時間割プレビュー */}
+        <div className="w-full max-w-2xl mt-8 mb-8">
+          <WeeklyTimetablePreview tt={tt} />
         </div>
       </div>
     );
@@ -421,6 +432,64 @@ export default function StudentPage() {
 }
 
 /* ── サブコンポーネント ── */
+
+const DAY_COLORS: Record<DayOfWeek, string> = {
+  月: 'bg-purple-600',
+  火: 'bg-amber-600',
+  水: 'bg-teal-600',
+  木: 'bg-blue-600',
+  金: 'bg-pink-600',
+};
+
+function WeeklyTimetablePreview({ tt }: { tt: TimetableTemplate }) {
+  const defaultRoom = 'A教室（2年）';
+
+  return (
+    <div className="card shadow-lg shadow-stone-200/50">
+      <div className="card-title text-center">1週間の時間割（例：2年生）</div>
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-[11px] border-collapse">
+          <thead>
+            <tr>
+              <th className="p-1.5 text-center text-[var(--ink3)] w-12"></th>
+              {DAYS.map(d => (
+                <th key={d} className="p-1.5 text-center">
+                  <span className={`inline-block text-white text-[10px] font-bold px-2 py-0.5 rounded-full ${DAY_COLORS[d]}`}>
+                    {DAY_ICONS[d]} {d}
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-t border-[var(--border)]">
+              <td className="p-1.5 text-center font-bold text-[var(--ink3)]">SHR</td>
+              {DAYS.map(d => (
+                <td key={d} className="p-1.5 text-center text-[var(--ink2)]">HR</td>
+              ))}
+            </tr>
+            {[1, 2, 3, 4, 5].map(i => (
+              <tr key={i} className="border-t border-[var(--border)]">
+                <td className="p-1.5 text-center font-bold text-[var(--ink3)]">{i}限</td>
+                {DAYS.map(d => {
+                  const subj = tt[d]?.[defaultRoom]?.[i] || '';
+                  return (
+                    <td key={d} className={`p-1.5 text-center ${subj ? 'text-[var(--ink)]' : 'text-[var(--ink3)]'}`}>
+                      {subj || '—'}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-[10px] text-[var(--ink3)] text-center mt-2">
+        ログイン後、あなたの学年・教室に合わせた時間割が表示されます
+      </div>
+    </div>
+  );
+}
 
 function StudentHeader({ student, onLogout }: {
   student: Student;

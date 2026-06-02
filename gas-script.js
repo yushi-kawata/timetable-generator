@@ -59,6 +59,7 @@ function doGet(e) {
         grade: obj.grade || '',
         course: obj.course || '通常',
         dx_email: obj.dx_email || '',
+        dx_password: obj.dx_password || '',
         days: { 月: obj['月'], 火: obj['火'], 水: obj['水'], 木: obj['木'], 金: obj['金'] }
       };
     });
