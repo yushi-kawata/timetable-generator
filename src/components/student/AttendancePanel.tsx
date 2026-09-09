@@ -13,6 +13,11 @@ import { nowTime } from './studentDate';
      ひとつの isSuccess にまとめない。連携が失敗しても登校をやり直させない。
    ・連携の状態は「いま押した分」しか分からない（取りに行く窓口が無い）。
      分からないときに「連携済み」とは書かない。
+   ・★裏側の dxCheckIn が返す {ok:true} は「HTTPが 2xx〜3xx で返ってきた」だけの意味で、
+     向こうに出欠が付いたことの証拠ではない（302 も成功に数えている／名簿の
+     dx_password が空の生徒は登録されていなくても ok が返る＝既知の穴・未修正）。
+     だから ok のときも「送信しました」までしか書かない。「反映」「登録されました」
+     「完了」のように、向こう側の結果を保証する言い方をしないこと。
    ・記録の結果は role="status" の領域に常設し、文言だけを差し替える。
    ・「下校」は赤にしない。未記録を警告色にしない。
    ============================================================================ */
@@ -40,6 +45,7 @@ type Req =
 type Dx =
   | { kind: 'none' }
   | { kind: 'sending' }
+  /** ★送信が通っただけ。向こうに反映されたかどうかは、この画面では分からない */
   | { kind: 'ok' }
   | { kind: 'failed' }
   /** 連携先が分からない（QRの窓口が取れない／名簿に dx_email が無い） */
@@ -319,14 +325,19 @@ function buildResult(a: {
 }
 
 function dxLine(dx: Dx) {
-  // ★「連携済み」と書けるのは、いま押した分の返事が ok だったときだけ。
-  //   取りに行く窓口が無いので、それ以外では書かない。
+  // ★ここで言ってよいのは「送った」までで、「反映された」ではない。
+  //   反映を確かめる窓口が無い以上、結果を保証する言葉を書かないこと。
   if (dx.kind === 'none') return null;
   if (dx.kind === 'sending') {
-    return <span className="text-[var(--ink2)]">教務システム（younetDX）へ反映しています…</span>;
+    return <span className="text-[var(--ink2)]">教務システム（younetDX）へ送っています…</span>;
   }
   if (dx.kind === 'ok') {
-    return <span className="text-[var(--ink2)]">教務システム（younetDX）にも反映しました。</span>;
+    // ★「反映しました」と言い切らない。こちらがやったのは【送ったこと】まで。
+    return (
+      <span className="text-[var(--ink2)]">
+        {'教務システム（younetDX）へ送信しました。反映されたかどうかは、この画面では確認できません。'}
+      </span>
+    );
   }
   if (dx.kind === 'failed') {
     return (

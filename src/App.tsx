@@ -258,11 +258,19 @@ export function AppInner() {
         {mode === 'student' && <StudentPage />}
         {mode === 'teacher' && <TeacherPage />}
         {mode === 'admin' && <AdminPage goTeacher={() => setMode('teacher')} />}
-        {/* ★健康観察は【別プロジェクトの窓口】で、今回の役割判定の外側です。
-            この画面は自前の合言葉を持っているので、こちらからは解錠しません
-            （isTeacher は常に false ＝ 健康観察側の仕切りをそのまま使う）。
-            ここに isStaff を渡すと保健の画面が無防備になります。渡さないこと。 */}
-        {mode === 'health' && <HealthCheckPage isTeacher={false} />}
+        {/* ★2026-09-09（社長決裁・案B）: 健康観察の教員確認も、合言葉ではなく
+            Googleログイン＋役割判定（isStaff）で通します。
+            ・合言葉 teacher1234 は【公開バンドルに文字列で載っていて誰でも読めます】。
+              時間割ツールの教員用ページで廃止したのと同じ理由で、ここでも境目に
+              なっていません。
+            ・Googleログイン＋メールの形での職員判定は本物の本人確認なので、
+              合言葉より強くなります（弱くしているのではありません）。
+            ・職員でない人（生徒・どちらとも判定できないアカウント）には false が
+              渡るので、保健側の合言葉の仕切りはそのまま残ります。
+            ★HealthCheckPage の中身は触っていません。渡す値を変えただけです。
+              保健側の窓口（GAS）には番人が入っていません（台帳 A4-72）。
+              画面の出し分けは守りではないので、窓口の手当ては別案件のままです。 */}
+        {mode === 'health' && <HealthCheckPage isTeacher={isStaff} />}
       </main>
     </div>
   );
