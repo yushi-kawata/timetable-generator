@@ -32,17 +32,13 @@ export function AppInner() {
   const clearGasError = useAppStore((s) => s.clearGasError);
 
   const [mode, setMode] = useState<Mode>('student');
-  const [authed, setAuthed] = useState(false);
-  const [showPw, setShowPw] = useState(false);
-  const [pwInput, setPwInput] = useState('');
-  const [pwError, setPwError] = useState('');
 
   // ★ログインが済んでから取りに行く（未ログインで叩かない）
   useEffect(() => {
     if (user) fetchAll();
   }, [user, fetchAll]);
 
-  // ★入っている人が変わったら、教員用の解錠と表示中のページを必ず戻す。
+  // ★入っている人が変わったら、表示中のページを必ず生徒用に戻す。
   //   これをしないと、同じ端末で入り直した次の人が
   //   「教員用ページが開いたまま」の状態を引き継いでしまう。
   //   （React の「レンダー中に前の値と比べて state を直す」書き方。
@@ -51,7 +47,6 @@ export function AppInner() {
   const [prevUid, setPrevUid] = useState<string | null>(uid);
   if (uid !== prevUid) {
     setPrevUid(uid);
-    setAuthed(false);
     setMode('student');
   }
 
@@ -60,34 +55,15 @@ export function AppInner() {
     await logout();
   };
 
-  // ★2026-09-09（台帳 A4-41）: この合言葉は【見た目の切り替えだけ】です。
-  //   権限の境目ではありません。破られても名簿は出ません
-  //   （裏側が職員か生徒かを見て forbidden を返すため）。
-  //   ブラウザの localStorage を書き換えれば素通りできる類のものなので、
-  //   これを「守り」と考えないこと。
-  //   ★消すかどうかは社長の判断事項なので、今回は残してあります。
-  const adminPw = localStorage.getItem('admin_pw') || 'teacher1234';
-
-  const handleAdminClick = () => {
-    if (authed) {
-      setMode('admin');
-    } else {
-      setShowPw(true);
-      setPwInput('');
-      setPwError('');
-    }
-  };
-
-  const checkPw = () => {
-    if (pwInput === adminPw) {
-      setAuthed(true);
-      setShowPw(false);
-      setMode('admin');
-    } else {
-      setPwError('パスワードが正しくありません');
-      setPwInput('');
-    }
-  };
+  // ★2026-09-09（台帳 A4-41／社長決裁）: 教員用ページの合言葉（teacher1234）は廃止しました。
+  //   ・Google ログイン＋裏側の役割判定が稼働したので、合言葉は権限の境目ではなく
+  //     【見た目の切り替えを止めているだけ】になっていた。
+  //   ・localStorage の admin_pw を書き換えれば素通りでき、既定値は公開バンドルに
+  //     文字列で載っていた。「守っていないのに守っているように見える」状態だったため外した。
+  //   ・入口の出し分けは下の isStaff（= classifyRole）に一本化しています。
+  //     ★新しい判定をここに書き足さないこと（src/lib/role.ts が正本）。
+  //   ・localStorage の admin_pw はもう読みません（残骸のキーが残っていても害はない）。
+  //   ※健康観察（HealthCheckPage）の合言葉は別プロジェクトの窓口で今回の対象外。そのままです。
 
   // ── 最初の確認中（ここで画面を出すと一瞬ログイン画面が見えてしまう）──
   if (authLoading) {
@@ -112,11 +88,17 @@ export function AppInner() {
     );
   }
 
+  // ★職員か生徒か。判定は src/lib/role.ts が正本（裏側の classifyRole_ と同じ）。
+  //   ここで新しい判定を書かないこと。
+  const role = classifyRole(user.email || '');
+  /** 教員用ページの入口を出してよい人＝職員だけ */
+  const isStaff = role === 'staff';
+
   // ── 生徒とも職員とも判定できないアカウント ──
   // ★裏側は、この形のアカウントに対して全アクションを forbidden にします
   //   （reason: 'unknownAccount'）。画面もどちらのページも出しません。
   //   ★ここで止めるのは【出し分け】であって守りではありません。守りは裏側です。
-  if (classifyRole(user.email || '') === null) {
+  if (role === null) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="card !mb-0 max-w-sm w-full text-center shadow-lg shadow-stone-200/50">
@@ -186,12 +168,17 @@ export function AppInner() {
               >
                 🏥 健康観察
               </button>
-              <button
-                onClick={handleAdminClick}
-                className="text-white/60 hover:text-white"
-              >
-                教員用ページ →
-              </button>
+              {/* ★教員用ページの入口は職員にだけ出す（台帳 A4-41／2026-09-09 社長決裁）。
+                  生徒に見せても中身は裏側が forbidden で止めるため、
+                  開かない入口を見せる意味がない。合言葉は廃止済み。 */}
+              {isStaff && (
+                <button
+                  onClick={() => setMode('admin')}
+                  className="text-white/60 hover:text-white"
+                >
+                  教員用ページ →
+                </button>
+              )}
             </>
           )}
           {(mode === 'teacher' || mode === 'admin') && (
@@ -259,52 +246,19 @@ export function AppInner() {
         </div>
       )}
 
-      {/* パスワードモーダル（教員用ページの入口。Google ログインとは別の仕切り） */}
-      {showPw && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4"
-          onClick={() => setShowPw(false)}
-        >
-          <div
-            className="bg-[var(--surface)] rounded-2xl p-8 sm:p-10 w-full max-w-sm shadow-2xl text-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-lg font-bold mb-1">🔐 教員用ページ</h2>
-            <p className="text-sm text-[var(--ink3)] mb-6">パスワードを入力してください</p>
-            <input
-              type="password"
-              value={pwInput}
-              onChange={(e) => setPwInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && checkPw()}
-              placeholder="••••••••"
-              className="w-full text-center text-base px-4 py-3 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] tracking-widest mb-2 focus:outline-none focus:border-[var(--accent)]"
-              autoFocus
-            />
-            {pwError && (
-              <p className="text-sm text-red-600 mb-3">❌ {pwError}</p>
-            )}
-            <button
-              onClick={checkPw}
-              className="w-full py-3 bg-[var(--accent)] text-white rounded-xl font-bold text-sm hover:bg-blue-800 mt-2"
-            >
-              ログイン
-            </button>
-            <button
-              onClick={() => setShowPw(false)}
-              className="w-full py-2 text-sm text-[var(--ink3)] mt-3 hover:text-[var(--ink)]"
-            >
-              キャンセル
-            </button>
-          </div>
-        </div>
-      )}
+      {/* ★合言葉のモーダルは廃止（台帳 A4-41／2026-09-09）。
+          教員用ページは職員かどうかだけで出し分けます。 */}
 
       {/* メインコンテンツ */}
       <main className="max-w-[1050px] mx-auto px-4 sm:px-5 py-7 pb-16">
         {mode === 'student' && <StudentPage />}
         {mode === 'teacher' && <TeacherPage />}
         {mode === 'admin' && <AdminPage goTeacher={() => setMode('teacher')} />}
-        {mode === 'health' && <HealthCheckPage isTeacher={authed} />}
+        {/* ★健康観察は【別プロジェクトの窓口】で、今回の役割判定の外側です。
+            この画面は自前の合言葉を持っているので、こちらからは解錠しません
+            （isTeacher は常に false ＝ 健康観察側の仕切りをそのまま使う）。
+            ここに isStaff を渡すと保健の画面が無防備になります。渡さないこと。 */}
+        {mode === 'health' && <HealthCheckPage isTeacher={false} />}
       </main>
     </div>
   );
