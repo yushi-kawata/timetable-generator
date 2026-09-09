@@ -2,16 +2,21 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { TimetableTemplate, StudentRecord, Student, AttendanceRecord, Period2Selection } from '../types/master';
 import { DEFAULT_TT } from '../types/master';
+import { auth, isAllowedDomain } from '../firebase';
+import { classifyRole } from '../lib/role';
 
 // GAS側は "course" カラム、フロント側は "classroom" フィールド
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapStudentFromGas(s: any): Student & { dx_password?: string } {
+function mapStudentFromGas(s: any): Student & { dx_password?: string; has_password?: boolean } {
   return {
     name: s.name || '',
     grade: s.grade || '',
     classroom: s.course === 'Growth' ? 'B教室' : (s.course || '学年教室'),
     dx_email: s.dx_email || '',
-    dx_password: s.dx_password || '',
+    // ★2026-09-02（台帳A4-41）: 裏側は平文パスワードを返さなくなった。
+    //   ここは常に空になる。空のまま保存しても裏側が既存を据え置くので消えない。
+    dx_password: '',
+    has_password: !!s.has_password,
     days: s.days || { 月: false, 火: false, 水: false, 木: false, 金: false },
   };
 }
@@ -31,28 +36,160 @@ function mapStudentToGas(s: Student & { dx_password?: string }) {
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwW8j8jnGDBD8PKO_EEfCOFikdhkoSiFcGlRVi0hSU99fQ2xC0D2C_MLCwqIQmIUc7R/exec';
 const GAS_URL = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
 
-// QR GAS URL
+// QR GAS URL（★別プロジェクトの窓口。A4-41 の番人は入っていない＝今回の対象外）
 const QR_GAS_URL = 'https://script.google.com/macros/s/AKfycbxVpj2Uyi_20_eO_JbTM0fVcGK0znTzk7Odbuf6xz0Gs_5V6DYS1nU30xooIVdiKsADpQ/exec';
 
-async function gasGet(action: string, params: Record<string, string> = {}) {
-  if (!GAS_URL) return null;
+// ============================================================================
+// 裏側（GAS）の叩き方 ─ 台帳 A4-41
+// ============================================================================
+// 手本 = yushi-student-portal/src/data/coin-api.js
+//
+// 守っている約束（申し送り「送り方」のとおり）:
+//  ・すべて POST。GET は使わない
+//    ★トークンをURLに載せると、Apps Script の実行ログ・ブラウザ履歴・Referer に
+//      1時間有効の資格情報が残る。読み取りも POST にしているのはこのため。
+//      date / week もクエリではなく本文に入れる。
+//  ・Content-Type を付けない
+//    ★付けると CORS のプリフライト（OPTIONS）が飛び、GAS Web App では通らない。
+//      ヘッダなし＝単純リクエスト扱い。
+//  ・mode: 'no-cors' は使わない
+//    ★no-cors だと返事が読めず、拒否されたことに気づけない（＝「0件」と誤表示する）。
+//  ・未ログインなら GAS を叩かずに手前で止める（サーバーの fail close に頼らない）
+
+/**
+ * 拒否・失敗の種類。
+ * ★2026-09-09（台帳 A4-41）: 'forbidden' を足した。
+ *   'signin'    … ログインが切れている（入り直せば直る）
+ *   'forbidden' … ログインは有効。権限の話（入り直しても直らない）
+ *   'network'   … つながらない／作りの問題
+ *   ★この3つを混ぜないこと。混ぜると生徒に「通信エラー」と出て、
+ *     直しようのないものを何度もやり直させることになる。
+ */
+type GasFailure = 'signin' | 'forbidden' | 'network';
+
+type GasResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; failure: GasFailure; reason: string };
+
+/**
+ * 画面に出す帯の種類。帯の下に添える案内文をこれで選ぶ。
+ * ★'forbidden' のときはログインし直させない（入り直しても変わらないため）。
+ */
+export type GasErrorKind = '' | 'signin' | 'forbidden' | 'network';
+
+const MSG_SIGNIN = 'ログインし直してください';
+const MSG_NETWORK = '通信に失敗しました。もう一度お試しください';
+// ★裏側が {"error":"forbidden","reason":"staffOnly"} を返したとき。
+//   ログインは有効なので、ログイン画面に飛ばさない・入り直しも勧めない。
+const MSG_STAFF_ONLY = 'この操作は先生用です';
+// ★裏側が {"error":"forbidden","reason":"unknownAccount"} を返したとき。
+const MSG_UNKNOWN_ACCOUNT = 'このアカウントでは利用できません。先生にご連絡ください';
+
+/**
+ * IDトークンを取り出す。ログインしていない／通せないアカウントなら空文字。
+ * ★裏側（GAS の verifyIdToken_ / isAllowedDomain_）と同じ判定を手前でもやる。
+ */
+async function getIdToken(): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) return '';
+  if (!isAllowedDomain(user.email || '')) return '';
+  if (user.emailVerified !== true) return '';
   try {
-    const qs = new URLSearchParams({ action, ...params }).toString();
-    const res = await fetch(`${GAS_URL}?${qs}`, { redirect: 'follow' });
-    return res.json();
-  } catch { return null; }
+    return await user.getIdToken();
+  } catch {
+    return '';
+  }
 }
 
-async function gasPost(body: unknown) {
-  if (!GAS_URL) return;
+// gasCall から画面の警告を出し入れするための入口。
+// useAppStore はこの下で作られるが、gasCall が呼ばれるのはストア生成後なので問題ない。
+function setGasError(message: string, kind: Exclude<GasErrorKind, ''>) {
+  const st = useAppStore.getState();
+  if (st.gasError !== message || st.gasErrorKind !== kind) {
+    useAppStore.setState({ gasError: message, gasErrorKind: kind });
+  }
+}
+function clearGasError() {
+  if (useAppStore.getState().gasError) {
+    useAppStore.setState({ gasError: '', gasErrorKind: '' });
+  }
+}
+
+/**
+ * forbidden の reason から画面に出す文言を選ぶ。
+ * ★知らない reason はログインの話に倒さない（権限側に倒す）。
+ *   ここで「ログインし直して」と出すと、直らないやり直しを延々させることになる。
+ */
+function forbiddenMessage(reason: string): string {
+  if (reason === 'staffOnly') return MSG_STAFF_ONLY;
+  if (reason === 'unknownAccount') return MSG_UNKNOWN_ACCOUNT;
+  return MSG_UNKNOWN_ACCOUNT;
+}
+
+/**
+ * 裏側を1回叩く。本文は { action, idToken, ...引数 }。
+ * ★返ってきた JSON に error があれば、それは拒否。Array.isArray() より先に見る。
+ */
+async function gasCall<T>(
+  action: string,
+  payload: Record<string, unknown> = {},
+): Promise<GasResult<T>> {
+  if (!GAS_URL) return { ok: false, failure: 'network', reason: 'noUrl' };
+
+  const idToken = await getIdToken();
+  if (!idToken) {
+    // 未ログイン。GAS を叩かずに手前で止める
+    setGasError(MSG_SIGNIN, 'signin');
+    return { ok: false, failure: 'signin', reason: 'signin' };
+  }
+
+  let json: unknown;
   try {
-    await fetch(GAS_URL, {
+    const res = await fetch(GAS_URL, {
       method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(body),
+      // ★headers は付けない（プリフライト回避）。mode も指定しない
+      body: JSON.stringify({ action, idToken, ...payload }),
+      redirect: 'follow',
     });
-  } catch {}
+    if (!res.ok) {
+      setGasError(MSG_NETWORK, 'network');
+      return { ok: false, failure: 'network', reason: `http${res.status}` };
+    }
+    json = await res.json();
+  } catch {
+    setGasError(MSG_NETWORK, 'network');
+    return { ok: false, failure: 'network', reason: 'fetch' };
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // ★ここが肝。Array.isArray() の前に error を見る。
+  //   拒否は {"error":"unauthorized","reason":"signin"} というオブジェクトで返る。
+  //   読み取り系は普段は配列が返るので、これを見落とすと拒否を「0件」と誤表示する。
+  // ────────────────────────────────────────────────────────────────
+  const err = (json as { error?: unknown } | null)?.error;
+  if (err) {
+    const reason = String((json as { reason?: unknown }).reason || err);
+    // ── ログインが切れている ──────────────────────────────────────
+    if (err === 'unauthorized') {
+      setGasError(MSG_SIGNIN, 'signin');
+      return { ok: false, failure: 'signin', reason };
+    }
+    // ── ログインは有効。権限の話（2026-09-09 台帳 A4-41）──────────
+    // ★ここを通信あつかいにすると、生徒が先生用の操作を叩いたときに
+    //   「通信エラー」と出る。権限の話なのでやり直しても直らない。
+    // ★ログイン画面に飛ばさないこと。入り直しても結果は変わらない。
+    if (err === 'forbidden') {
+      setGasError(forbiddenMessage(reason), 'forbidden');
+      return { ok: false, failure: 'forbidden', reason };
+    }
+    // 'invalid action' / 'bad request' など。作りの問題なので通信あつかいにする
+    setGasError(MSG_NETWORK, 'network');
+    return { ok: false, failure: 'network', reason };
+  }
+
+  // ここまで来たら通っている。前に出していた警告は消す
+  clearGasError();
+  return { ok: true, data: json as T };
 }
 
 interface QrData {
@@ -65,6 +202,31 @@ interface QrData {
   updated_at: string;
 }
 
+/** 名簿の保存結果。画面に出す文言つき */
+export interface SaveStudentsResult {
+  ok: boolean;
+  /** 全消しを止められた＝もう一度押せば消せる、という状態 */
+  needsWipeConfirm: boolean;
+  message: string;
+}
+
+/**
+ * 「私は誰か」の結果（getMe）。
+ * ★2026-09-09 の決裁で、生徒の younetDX メール＋パスワード入力（authStudent）は廃止。
+ *   生徒は Google ログインだけで入り、本人の特定は裏側が
+ *   「確認済みの Google のメール」と名簿の dx_email 列を突き合わせて行う。
+ *   ＝画面からパスワードを送らない。
+ */
+export type GetMeResult =
+  | { ok: true; student: Student }
+  | {
+      ok: false;
+      /** ★2026-09-09: 'forbidden' を足した。権限の話とログインの話を混ぜない */
+      reason: 'notEnrolled' | 'signin' | 'forbidden' | 'network';
+      /** forbidden のときに画面へ出す文言（帯と同じ言い方に揃える） */
+      message?: string;
+    };
+
 interface AppState {
   tt: TimetableTemplate;
   records: StudentRecord[];
@@ -74,6 +236,12 @@ interface AppState {
   qrData: QrData | null;
   loading: boolean;
   gasUrl: string;
+  /** 裏側に拒否された／つながらないときの文言。'' なら正常 */
+  gasError: string;
+  /** その文言が「ログインの話」か「権限の話」か「通信の話」か */
+  gasErrorKind: GasErrorKind;
+
+  clearGasError: () => void;
 
   fetchAll: () => Promise<void>;
   fetchStudents: () => Promise<void>;
@@ -84,20 +252,33 @@ interface AppState {
 
   setTT: (tt: TimetableTemplate) => void;
   updateTTCell: (day: string, room: string, period: number, value: string) => void;
-  saveTT: () => Promise<void>;
+  saveTT: () => Promise<boolean>;
 
-  saveStudents: (students: (Student & { dx_password?: string })[]) => Promise<void>;
-  checkIn: (name: string, grade: string, date: string, time: string) => Promise<void>;
-  checkOut: (name: string, date: string, time: string) => Promise<void>;
-  savePeriod2: (week: string, name: string, selections: Partial<Record<string, Record<number, string>>>) => Promise<void>;
+  saveStudents: (
+    students: (Student & { dx_password?: string })[],
+    confirmEmpty?: boolean,
+  ) => Promise<SaveStudentsResult>;
+  checkIn: (name: string, grade: string, date: string, time: string) => Promise<boolean>;
+  checkOut: (name: string, date: string, time: string) => Promise<boolean>;
+  savePeriod2: (week: string, name: string, selections: Partial<Record<string, Record<number, string>>>) => Promise<boolean>;
 
-  authStudent: (email: string, password: string) => Promise<Student | null>;
+  /** ログイン中の Google アカウントが名簿の誰なのかを裏側に聞く。引数は idToken だけ */
+  getMe: () => Promise<GetMeResult>;
   dxCheckIn: (email: string, dxUrl: string) => Promise<boolean>;
 
-  // レガシー互換
+  // レガシー互換（いまの画面からは呼ばれていない。呼ばれても番人を通る）
   addRecord: (r: Omit<StudentRecord, 'id'>) => Promise<void>;
   deleteRecord: (id: number) => Promise<void>;
   clearRecords: () => Promise<void>;
+}
+
+// 空行を除外 & 同名重複を除外（最後の登録を優先）
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function dedupeStudents(raw: any[]): Student[] {
+  const mapped = raw.map(mapStudentFromGas).filter((s) => s.name.trim());
+  const seen = new Map<string, Student>();
+  for (const s of mapped) seen.set(s.name, s);
+  return [...seen.values()];
 }
 
 export const useAppStore = create<AppState>()(
@@ -111,6 +292,10 @@ export const useAppStore = create<AppState>()(
       qrData: null,
       loading: false,
       gasUrl: GAS_URL,
+      gasError: '',
+      gasErrorKind: '',
+
+      clearGasError: () => set({ gasError: '', gasErrorKind: '' }),
 
       setGasUrl: (url: string) => {
         localStorage.setItem('gas_url', url);
@@ -119,73 +304,90 @@ export const useAppStore = create<AppState>()(
       },
 
       fetchAll: async () => {
+        // ★既存の挙動（今回変えていない）: gas_url を一度も入れていない端末では
+        //   ここは何もせずに抜ける。新しいブラウザでは管理画面でURLを一度入れる。
         const url = localStorage.getItem('gas_url');
         if (!url) { set({ loading: false }); return; }
+
+        // ────────────────────────────────────────────────────────────
+        // ★2026-09-09（台帳 A4-41）: getRecs と getStudents は職員だけ。
+        //   生徒のまま3つ叩くと、起動のたびに2件が forbidden になり、
+        //   毎回「この操作は先生用です」の帯が出る（生徒は何も悪くない）。
+        //   なので生徒のときは getTT だけ叩く。
+        // ★これは【出し分け】であって権限の境目ではない。
+        //   ここを書き換えて3つ叩いても、裏側が forbidden を返すだけで
+        //   名簿も申告も出てこない。
+        // ────────────────────────────────────────────────────────────
+        const role = classifyRole(auth.currentUser?.email || '');
+        if (role === null) {
+          // 生徒とも職員とも判定できないアカウント。1件も叩かない
+          // （画面側も App がここで止めて、どちらのページも出さない）
+          set({ loading: false });
+          return;
+        }
+        const isStaff = role === 'staff';
+
         set({ loading: true });
-        try {
-          const [recs, ttData, studentsData] = await Promise.all([
-            gasGet('getRecs'),
-            gasGet('getTT'),
-            gasGet('getStudents'),
-          ]);
-          const rawRecs: StudentRecord[] = Array.isArray(recs) ? recs : [];
+
+        const [ttRes, recsRes, studentsRes] = await Promise.all([
+          gasCall<TimetableTemplate | null>('getTT'),
+          isStaff ? gasCall<StudentRecord[]>('getRecs') : null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          isStaff ? gasCall<any[]>('getStudents') : null,
+        ]);
+
+        // ★拒否されていたら、いま持っている中身を空で上書きしない。
+        //   （空で上書きすると「データが消えた」ように見える）
+        //   生徒のときは recsRes / studentsRes が null＝叩いていない。
+        if (recsRes && recsRes.ok && Array.isArray(recsRes.data)) {
           const seen = new Map<string, StudentRecord>();
-          for (const r of rawRecs) {
+          for (const r of recsRes.data) {
             const key = `${r.name}__${r.week}`;
             const existing = seen.get(key);
-            if (!existing || r.id > existing.id) {
-              seen.set(key, r);
-            }
+            if (!existing || r.id > existing.id) seen.set(key, r);
           }
-          set({
-            records: [...seen.values()].sort((a, b) => b.id - a.id),
-            tt: ttData && typeof ttData === 'object' && ttData['月'] ? ttData : get().tt,
-            students: Array.isArray(studentsData) ? (() => {
-              const mapped = studentsData.map(mapStudentFromGas).filter((s: Student) => s.name.trim());
-              const seen = new Map<string, Student>();
-              for (const s of mapped) seen.set(s.name, s);
-              return [...seen.values()];
-            })() : get().students,
-            loading: false,
-          });
-        } catch {
-          set({ loading: false });
+          set({ records: [...seen.values()].sort((a, b) => b.id - a.id) });
         }
+        if (ttRes.ok) {
+          const ttData = ttRes.data;
+          if (ttData && typeof ttData === 'object' && ttData['月']) set({ tt: ttData });
+        }
+        if (studentsRes && studentsRes.ok && Array.isArray(studentsRes.data)) {
+          set({ students: dedupeStudents(studentsRes.data) });
+        }
+        set({ loading: false });
       },
 
       fetchStudents: async () => {
-        const data = await gasGet('getStudents');
-        if (Array.isArray(data)) {
-          // 空行を除外 & 同名重複を除外（最後の登録を優先）
-          const mapped = data.map(mapStudentFromGas).filter(s => s.name.trim());
-          const seen = new Map<string, typeof mapped[0]>();
-          for (const s of mapped) seen.set(s.name, s);
-          set({ students: [...seen.values()] });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = await gasCall<any[]>('getStudents');
+        if (res.ok && Array.isArray(res.data)) {
+          set({ students: dedupeStudents(res.data) });
         }
       },
 
       fetchAttendance: async (date: string) => {
-        const data = await gasGet('getAttendance', { date });
-        if (Array.isArray(data)) {
-          set({ attendance: data });
-        }
+        // ★date は本文に入れる（クエリではない）
+        const res = await gasCall<AttendanceRecord[]>('getAttendance', { date });
+        if (res.ok && Array.isArray(res.data)) set({ attendance: res.data });
       },
 
       fetchPeriod2: async (week: string) => {
-        const data = await gasGet('getPeriod2', { week });
-        if (Array.isArray(data)) {
-          set({ period2: data });
-        }
+        // ★week は本文に入れる（クエリではない）
+        const res = await gasCall<Period2Selection[]>('getPeriod2', { week });
+        if (res.ok && Array.isArray(res.data)) set({ period2: res.data });
       },
 
+      // ★QRだけは別プロジェクトの窓口。A4-41 の番人はここには入っていないので
+      //   IDトークンは送らない（送っても向こうは見ない）。今回の対象外。
       fetchQrData: async () => {
         try {
           const res = await fetch(`${QR_GAS_URL}?action=api`, { redirect: 'follow' });
           const data = await res.json();
-          if (data && data.tokou_qr) {
-            set({ qrData: data });
-          }
-        } catch {}
+          if (data && data.tokou_qr) set({ qrData: data });
+        } catch {
+          // QRが取れなくても、登校・下校そのものは記録できるのでここでは止めない
+        }
       },
 
       setTT: (tt) => set({ tt }),
@@ -201,16 +403,63 @@ export const useAppStore = create<AppState>()(
 
       saveTT: async () => {
         const { tt } = get();
-        await gasPost({ action: 'saveTT', data: tt });
+        const res = await gasCall<{ ok?: boolean }>('saveTT', { data: tt });
+        return res.ok && res.data?.ok !== false;
       },
 
-      saveStudents: async (students: Student[]) => {
+      saveStudents: async (students, confirmEmpty = false) => {
+        const payload: Record<string, unknown> = { data: students.map(mapStudentToGas) };
+        // ★全消しは明示したときだけ。既定では送らない
+        if (confirmEmpty) payload.confirmEmpty = true;
+
+        const res = await gasCall<{ ok?: boolean; reason?: string; prev?: number }>(
+          'saveStudents',
+          payload,
+        );
+
+        if (!res.ok) {
+          // ★2026-09-09: 権限で断られたときに「通信に失敗しました」と出さない。
+          //   帯と同じ文言をボタンの下にも出す（言うことが二つに割れないように）。
+          const message =
+            res.failure === 'signin' ? MSG_SIGNIN
+            : res.failure === 'forbidden' ? forbiddenMessage(res.reason)
+            : MSG_NETWORK;
+          return { ok: false, needsWipeConfirm: false, message };
+        }
+
+        // ★拒否は {ok:false, reason:...} で返る（error キーは付かない）
+        if (res.data?.ok === false) {
+          const reason = res.data.reason;
+          // ★ここで名簿を取り直さないこと。取り直すと画面の一覧が裏側の中身で
+          //   上書きされ、
+          //   （1）先生が消したばかりの行が勝手に戻る＝「全員を消して保存」の
+          //        2回目が押せなくなる（一覧が0件でなくなるため）
+          //   （2）まだ保存していない打ちかけの修正が黙って消える
+          //   裏側は1行も書き換えていないので、取り直す必要もない。
+          if (reason === 'refuseWipe') {
+            const prev = typeof res.data.prev === 'number' ? res.data.prev : 0;
+            return {
+              ok: false,
+              needsWipeConfirm: true,
+              message: `全員を消す操作です。本当に消す場合は、もう一度「全員を消して保存」を押してください（いまは何も変わっていません。${prev}件がそのまま残っています）`,
+            };
+          }
+          // badPayload など
+          return {
+            ok: false,
+            needsWipeConfirm: false,
+            message: '保存できませんでした。もう一度お試しください',
+          };
+        }
+
         set({ students });
-        await gasPost({ action: 'saveStudents', data: students.map(mapStudentToGas) });
+        return { ok: true, needsWipeConfirm: false, message: '保存しました' };
       },
 
       checkIn: async (name, grade, date, time) => {
-        // ローカル即時反映
+        const res = await gasCall<{ ok?: boolean }>('checkIn', { name, grade, date, time });
+        if (!res.ok) return false;
+        // ★裏側に通ってから画面に出す。先に出すと、拒否されても「登校済み」に見える
         set((s) => {
           const existing = s.attendance.find(a => a.date === date && a.name === name);
           if (existing) return s;
@@ -218,84 +467,89 @@ export const useAppStore = create<AppState>()(
             attendance: [...s.attendance, { date, name, grade, checkinTime: time, checkoutTime: '' }],
           };
         });
-        await gasPost({ action: 'checkIn', name, grade, date, time });
+        return true;
       },
 
       checkOut: async (name, date, time) => {
+        const res = await gasCall<{ ok?: boolean }>('checkOut', { name, date, time });
+        if (!res.ok) return false;
         set((s) => ({
           attendance: s.attendance.map(a =>
             a.date === date && a.name === name ? { ...a, checkoutTime: time } : a
           ),
         }));
-        await gasPost({ action: 'checkOut', name, date, time });
+        return true;
       },
 
       savePeriod2: async (week, name, selections) => {
+        const res = await gasCall<{ ok?: boolean }>('savePeriod2', { week, name, selections });
+        if (!res.ok) return false;
         set((s) => ({
           period2: [
             ...s.period2.filter(p => !(p.week === week && p.name === name)),
             { week, name, selections },
           ],
         }));
-        await gasPost({ action: 'savePeriod2', week, name, selections });
+        return true;
       },
 
-      authStudent: async (email: string, password: string): Promise<Student | null> => {
-        try {
-          const res = await fetch(GAS_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ action: 'authStudent', email, password }),
-          });
-          const data = await res.json();
-          if (data.ok && data.student) {
-            return mapStudentFromGas(data.student);
+      // ★引数は idToken だけ（gasCall が本文に入れる）。
+      //   メールもパスワードも画面からは送らない。本人の特定は裏側がトークンから行う。
+      getMe: async (): Promise<GetMeResult> => {
+        const res = await gasCall<{ ok?: boolean; reason?: string; student?: unknown }>('getMe');
+        if (!res.ok) {
+          // ★権限で断られたときに「ログインし直してください」と出さない。
+          //   出すと、帯（ログインし直しても変わりません）と言うことが割れる。
+          if (res.failure === 'forbidden') {
+            return { ok: false, reason: 'forbidden', message: forbiddenMessage(res.reason) };
           }
-          return null;
-        } catch {
-          return null;
+          return { ok: false, reason: res.failure === 'signin' ? 'signin' : 'network' };
         }
+        // ★ok / error を見る前に配列を期待しない。getMe はオブジェクトで返る
+        const data = res.data;
+        if (data && data.ok === true && data.student) {
+          return { ok: true, student: mapStudentFromGas(data.student) };
+        }
+        if (data && data.reason === 'notEnrolled') {
+          return { ok: false, reason: 'notEnrolled' };
+        }
+        return { ok: false, reason: 'network' };
       },
 
       dxCheckIn: async (email: string, dxUrl: string): Promise<boolean> => {
-        try {
-          const res = await fetch(GAS_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ action: 'dxCheckIn', email, dxUrl }),
-          });
-          const data = await res.json();
-          return data.ok === true;
-        } catch {
-          return false;
-        }
+        const res = await gasCall<{ ok?: boolean }>('dxCheckIn', { email, dxUrl });
+        return res.ok && res.data?.ok === true;
       },
 
-      // レガシー互換
+      // ── レガシー互換 ──────────────────────────────────────────────
+      // いまの画面からは呼ばれていないが、呼ばれた場合も番人を通る形にしてある
       addRecord: async (r) => {
         const record = { ...r, id: Date.now() };
         const old = get().records.filter(
           (x) => x.name === record.name && x.week === record.week
         );
         for (const o of old) {
-          await gasPost({ action: 'deleteRec', id: o.id });
+          await gasCall('deleteRec', { id: o.id });
         }
+        const res = await gasCall<{ ok?: boolean }>('saveRec', { data: record });
+        if (!res.ok) return;
         set((s) => ({
           records: [record, ...s.records.filter(
             (x) => !(x.name === record.name && x.week === record.week)
           )],
         }));
-        await gasPost({ action: 'saveRec', data: record });
       },
 
       deleteRecord: async (id) => {
+        const res = await gasCall<{ ok?: boolean }>('deleteRec', { id });
+        if (!res.ok) return;
         set((s) => ({ records: s.records.filter((r) => r.id !== id) }));
-        await gasPost({ action: 'deleteRec', id });
       },
 
       clearRecords: async () => {
+        const res = await gasCall<{ ok?: boolean }>('clearRecs');
+        if (!res.ok) return;
         set({ records: [] });
-        await gasPost({ action: 'clearRecs' });
       },
     }),
     {

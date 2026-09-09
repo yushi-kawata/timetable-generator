@@ -20,9 +20,13 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
   const [newClassroom, setNewClassroom] = useState('学年教室');
   const [newDxEmail, setNewDxEmail] = useState('');
   const [newDxPassword, setNewDxPassword] = useState('');
-  const [saved, setSaved] = useState(false);
+  // 保存の結果。★「保存しました」だけでなく、断られた理由も必ず画面に出す
+  const [saveMsg, setSaveMsg] = useState<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(null);
+  // 名簿の全消しを一度断られた状態（もう一度押せば消せる）
+  const [wipeArmed, setWipeArmed] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [editDay, setEditDay] = useState<DayOfWeek>('月');
-  const [ttSaved, setTtSaved] = useState(false);
+  const [ttMsg, setTtMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [urlInput, setUrlInput] = useState(gasUrl);
 
   useEffect(() => {
@@ -66,16 +70,44 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
     setLocalStudents(prev => prev.filter((_, i) => i !== idx));
   };
 
+  // ★空の名簿で保存しようとしたときだけ「全消し」の確認が要る
+  const isWipe = localStudents.length === 0;
+  const wipeConfirmReady = wipeArmed && isWipe;
+
   const handleSaveStudents = async () => {
-    await saveStudents(localStudents);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (saving) return;
+    setSaving(true);
+    setSaveMsg(null);
+    // 一度断られたあとの2回目だけ confirmEmpty を送る
+    const res = await saveStudents(localStudents, wipeConfirmReady);
+    setSaving(false);
+
+    if (res.ok) {
+      setWipeArmed(false);
+      setSaveMsg({ kind: 'ok', text: '保存しました' });
+      setTimeout(() => setSaveMsg(null), 3000);
+      return;
+    }
+    if (res.needsWipeConfirm) {
+      // refuseWipe。★裏側はまだ何も消していない
+      setWipeArmed(true);
+      setSaveMsg({ kind: 'warn', text: res.message });
+      return;
+    }
+    // badPayload / 拒否 / 通信の失敗
+    setWipeArmed(false);
+    setSaveMsg({ kind: 'error', text: res.message });
   };
 
   const handleSaveTT = async () => {
-    await saveTT();
-    setTtSaved(true);
-    setTimeout(() => setTtSaved(false), 2000);
+    setTtMsg(null);
+    const ok = await saveTT();
+    if (ok) {
+      setTtMsg({ kind: 'ok', text: '保存しました' });
+      setTimeout(() => setTtMsg(null), 3000);
+    } else {
+      setTtMsg({ kind: 'error', text: '保存できませんでした。もう一度お試しください' });
+    }
   };
 
   return (
@@ -114,19 +146,45 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
               <div className="text-xs text-[var(--ink3)]">名前・学年・所属教室・登校曜日を管理</div>
             </div>
             <div className="flex gap-2 items-center">
-              {saved && (
+              {saveMsg?.kind === 'ok' && (
                 <span className="text-sm text-[var(--green)] font-semibold bg-[var(--green-l)] px-3 py-1.5 rounded-lg">
-                  ✅ 保存しました
+                  ✅ {saveMsg.text}
                 </span>
               )}
               <button
                 onClick={handleSaveStudents}
-                className="px-5 py-2 bg-[var(--accent)] text-white rounded-lg font-bold text-xs"
+                disabled={saving}
+                className={`px-5 py-2 rounded-lg font-bold text-xs text-white disabled:opacity-60 ${
+                  wipeConfirmReady ? 'bg-[var(--red,#b91c1c)] bg-red-700 hover:bg-red-800' : 'bg-[var(--accent)] hover:bg-blue-800'
+                }`}
               >
-                💾 保存
+                {saving ? '保存中...' : wipeConfirmReady ? '全員を消して保存' : '💾 保存'}
               </button>
             </div>
           </div>
+
+          {/* ★断られたときの理由。ここを出さないと「押したのに何も起きない」になる */}
+          {saveMsg && saveMsg.kind !== 'ok' && (
+            <div
+              role="alert"
+              className={`mb-4 px-4 py-3 rounded-lg text-sm leading-relaxed border ${
+                saveMsg.kind === 'warn'
+                  ? 'bg-amber-50 border-amber-300 text-amber-800'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              }`}
+            >
+              <span className="font-bold">{saveMsg.kind === 'warn' ? '⚠️ ' : '❌ '}</span>
+              {saveMsg.text}
+              {saveMsg.kind === 'warn' && (
+                <button
+                  onClick={() => { setWipeArmed(false); setSaveMsg(null); }}
+                  className="ml-3 underline font-bold hover:no-underline"
+                >
+                  やめる
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="overflow-x-auto">
             <table className="mgmt-table">
@@ -180,11 +238,16 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
                       />
                     </td>
                     <td>
+                      {/* ★2026-09-02（台帳A4-41）: 既存のパスワードは表示しない。
+                          空のまま保存すると裏側が既存を据え置く＝消えない。 */}
                       <input
-                        type="text"
+                        type="password"
                         value={(s as any).dx_password || ''}
                         onChange={e => updateStudent(i, 'dx_password', e.target.value)}
-                        placeholder="password"
+                        placeholder={(s as any).has_password ? '設定済み（変更時のみ入力）' : '未設定'}
+                        title={(s as any).has_password
+                          ? 'パスワードは設定済みです。空のままにすると今の値がそのまま残ります。変えたいときだけ入力してください。'
+                          : 'まだ設定されていません。'}
                         className="tbl-input text-xs"
                       />
                     </td>
@@ -268,9 +331,14 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
             <button onClick={handleSaveTT} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg font-bold text-xs">
               💾 保存する
             </button>
-            {ttSaved && (
+            {ttMsg?.kind === 'ok' && (
               <span className="text-sm text-[var(--green)] font-semibold bg-[var(--green-l)] px-3 py-1.5 rounded-lg">
-                ✅ 保存しました
+                ✅ {ttMsg.text}
+              </span>
+            )}
+            {ttMsg?.kind === 'error' && (
+              <span role="alert" className="text-sm text-red-700 font-semibold bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">
+                ❌ {ttMsg.text}
               </span>
             )}
           </div>

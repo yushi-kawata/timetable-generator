@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A4-41 描画確認</title>
+    <script>
+      // 本番と同じく gas_url が入っている端末として扱う（fetchAll が動く条件）
+      localStorage.setItem('gas_url', 'https://script.google.com/macros/s/DUMMY/exec');
+      localStorage.removeItem('timetable-system-v5');
+      localStorage.removeItem('admin_pw');
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/tmp_verify/verify-main.tsx"></script>
+  </body>
+</html>

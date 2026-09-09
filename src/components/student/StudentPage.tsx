@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/useMasterStore';
+import { useAuth } from '../../hooks/auth-context';
 import { DAYS, DAY_ICONS, ROOMS, PERIODS, GRADE_ROOM, SELECTABLE_PERIODS } from '../../types/master';
 import type { DayOfWeek, Student, TimetableTemplate } from '../../types/master';
 
@@ -40,19 +41,30 @@ function getWeekKey(date: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * 「私は誰か」の確認の状態。
+ * ★2026-09-09（台帳 A4-41）: 'forbidden' を足した。
+ *   権限で断られたときに「ログインし直してください」と出すと、
+ *   上の帯（ログインし直しても変わりません）と言うことが割れる。
+ */
+type MeStatus = 'loading' | 'ok' | 'notEnrolled' | 'forbidden' | 'error';
+
 export default function StudentPage() {
   const {
     tt, attendance, period2, qrData,
     fetchAttendance, fetchPeriod2, fetchQrData,
     checkIn, checkOut, savePeriod2,
-    authStudent, dxCheckIn,
+    getMe, dxCheckIn,
   } = useAppStore();
+  const { user, logout } = useAuth();
 
-  const [loggedIn, setLoggedIn] = useState<Student | null>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
+  // ★2026-09-09 の決裁で、younetDX のメール＋パスワード入力は廃止。
+  //   ここに入ってくる時点で Google ログインは済んでいる（App の入口で止めている）。
+  //   誰なのかは getMe で裏側に聞く。画面はパスワードを持たないし、送らない。
+  const [student, setStudent] = useState<Student | null>(null);
+  const [meStatus, setMeStatus] = useState<MeStatus>('loading');
+  /** forbidden のときに出す文言（裏側の reason に合わせて裏方が決めたもの） */
+  const [meMessage, setMeMessage] = useState('');
   const [checkInLoading, setCheckInLoading] = useState(false);
   const [checkOutLoading, setCheckOutLoading] = useState(false);
   const [dxResult, setDxResult] = useState<'none' | 'ok' | 'fail'>('none');
@@ -63,22 +75,40 @@ export default function StudentPage() {
   const weekKey = getWeekKey(new Date());
 
   useEffect(() => {
-    const saved = sessionStorage.getItem('student_session');
-    if (saved) {
-      try { setLoggedIn(JSON.parse(saved)); } catch { /* */ }
-    }
+    let alive = true;
+
+    (async () => {
+      setMeStatus('loading');
+      setAttendanceLoading(true);
+      const me = await getMe();
+      if (!alive) return;
+      if (me.ok) {
+        setStudent(me.student);
+        setMeStatus('ok');
+        setMeMessage('');
+      } else {
+        setStudent(null);
+        setMeMessage(me.message || '');
+        if (me.reason === 'notEnrolled') setMeStatus('notEnrolled');
+        else if (me.reason === 'forbidden') setMeStatus('forbidden');
+        else setMeStatus('error');
+      }
+    })();
+
     Promise.all([
       fetchAttendance(today),
       fetchPeriod2(weekKey),
       fetchQrData(),
-    ]).finally(() => setAttendanceLoading(false));
-  }, []);
+    ]).finally(() => { if (alive) setAttendanceLoading(false); });
 
-  const myAttendance = loggedIn ? attendance.find(a => a.date === today && a.name === loggedIn.name) : null;
+    return () => { alive = false; };
+    // user が変わったら（＝別の人が入り直したら）もう一度確認する
+  }, [user, getMe, fetchAttendance, fetchPeriod2, fetchQrData, today, weekKey]);
+
+  const myAttendance = student ? attendance.find(a => a.date === today && a.name === student.name) : null;
   const checkedIn = !!myAttendance;
   const checkedOut = !!(myAttendance?.checkoutTime);
 
-  const student = loggedIn;
   const isSchoolDay = dow && student?.days[dow];
 
   const getRoom = (period: number): string => {
@@ -92,34 +122,17 @@ export default function StudentPage() {
     return GRADE_ROOM[student.grade] || '';
   };
 
-  const handleLogin = async () => {
-    setLoginError('');
-    setLoginLoading(true);
-    const result = await authStudent(email.trim(), password);
-    setLoginLoading(false);
-    if (result) {
-      setLoggedIn(result);
-      sessionStorage.setItem('student_session', JSON.stringify(result));
-      fetchAttendance(today);
-      fetchPeriod2(weekKey);
-    } else {
-      setLoginError('メールアドレスまたはパスワードが正しくありません');
-    }
-  };
-
-  const handleLogout = () => {
-    setLoggedIn(null);
-    sessionStorage.removeItem('student_session');
-    setEmail('');
-    setPassword('');
-    setDxResult('none');
-  };
-
   const handleCheckIn = async () => {
     if (!student || !dow || checkInLoading) return;
     setCheckInLoading(true);
     setDxResult('none');
-    await checkIn(student.name, student.grade, today, nowTime());
+    const saved = await checkIn(student.name, student.grade, today, nowTime());
+    if (!saved) {
+      // 拒否された。ここで「登校しました」を出すと嘘になる（帯に理由が出ている）
+      setDxResult('fail');
+      setCheckInLoading(false);
+      return;
+    }
     if (qrData?.tokou_url && student.dx_email) {
       const ok = await dxCheckIn(student.dx_email, qrData.tokou_url);
       setDxResult(ok ? 'ok' : 'fail');
@@ -133,7 +146,12 @@ export default function StudentPage() {
     if (!student || checkOutLoading) return;
     setCheckOutLoading(true);
     setDxResult('none');
-    await checkOut(student.name, today, nowTime());
+    const saved = await checkOut(student.name, today, nowTime());
+    if (!saved) {
+      setDxResult('fail');
+      setCheckOutLoading(false);
+      return;
+    }
     if (qrData?.gekou_url && student.dx_email) {
       const ok = await dxCheckIn(student.dx_email, qrData.gekou_url);
       setDxResult(ok ? 'ok' : 'fail');
@@ -161,84 +179,87 @@ export default function StudentPage() {
   };
 
   // ══════════════════════════════════
-  // ── ログイン画面 ──
+  // ── 私が誰かを確認している ──
   // ══════════════════════════════════
-  if (!loggedIn) {
+  if (meStatus === 'loading') {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-start pt-8">
-        <div className="w-full max-w-sm">
-          {/* ロゴ・タイトル */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white text-2xl mb-4 shadow-lg shadow-blue-200">
-              Y
-            </div>
-            <h1 className="text-2xl font-bold text-[var(--ink)]">通学生ポータル</h1>
-            <p className="text-sm text-[var(--ink3)] mt-1">勇志国際高等学校 福岡学習センター</p>
-          </div>
+      <div className="card shadow-lg shadow-stone-200/50">
+        <div className="flex items-center justify-center gap-3 py-10 text-sm text-[var(--ink3)]">
+          <span className="inline-block w-5 h-5 border-2 border-stone-300 border-t-[var(--accent)] rounded-full animate-spin" />
+          確認しています...
+        </div>
+      </div>
+    );
+  }
 
-          {/* 手順ガイド */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-6 border border-blue-100">
-            <div className="text-xs font-bold text-blue-700 mb-2">ご利用手順</div>
-            <div className="space-y-1.5 text-xs text-blue-600">
-              <div className="flex items-start gap-2"><span className="font-bold min-w-[18px]">1.</span>younetDXのID・パスワードでログイン</div>
-              <div className="flex items-start gap-2"><span className="font-bold min-w-[18px]">2.</span>「登校しました」ボタンを押す</div>
-              <div className="flex items-start gap-2"><span className="font-bold min-w-[18px]">3.</span>younetDXの出席も自動で登録されます</div>
-              <div className="flex items-start gap-2"><span className="font-bold min-w-[18px]">4.</span>時間割を確認してください</div>
+  // ══════════════════════════════════
+  // ── 名簿に載っていない ──
+  // ══════════════════════════════════
+  if (meStatus === 'notEnrolled') {
+    return (
+      <div className="space-y-5">
+        <div className="card shadow-lg shadow-stone-200/50">
+          <div className="text-center py-8">
+            <div className="text-4xl mb-3">📋</div>
+            <div className="font-bold text-[var(--ink)]">名簿に登録がありません。担当の先生にお伝えください</div>
+            <div className="text-xs text-[var(--ink3)] mt-3 leading-relaxed break-all">
+              いまログインしているアカウント：{user?.email}
             </div>
-          </div>
-
-          {/* ログインフォーム */}
-          <div className="card !mb-0 shadow-lg shadow-stone-200/50">
-            <div className="mb-4">
-              <div className="form-label">メールアドレス</div>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="y000000@yushi.ed.jp"
-                className="form-input w-full !max-w-none"
-                autoFocus
-              />
-            </div>
-            <div className="mb-4">
-              <div className="form-label">パスワード</div>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                placeholder="y000000"
-                className="form-input w-full !max-w-none"
-              />
-            </div>
-            <div className="mb-5 bg-stone-50 rounded-lg px-3 py-2 border border-stone-200">
-              <div className="text-[11px] text-[var(--ink3)]">
-                <span className="font-bold">ID例:</span> y000000@yushi.ed.jp / <span className="font-bold">パスワード例:</span> y000000
-              </div>
-              <div className="text-[10px] text-[var(--ink3)] mt-0.5">younetDXと同じID・パスワードです</div>
-            </div>
-            {loginError && (
-              <div className="text-sm text-red-600 mb-4 bg-red-50 px-3 py-2 rounded-lg">{loginError}</div>
-            )}
             <button
-              onClick={handleLogin}
-              disabled={loginLoading || !email || !password}
-              className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-sm hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-50 shadow-md shadow-blue-200"
+              onClick={logout}
+              className="mt-6 px-5 py-2.5 rounded-xl border-2 border-[var(--border)] bg-[var(--surface2)] text-sm font-bold text-[var(--ink2)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-all"
             >
-              {loginLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ログイン中...
-                </span>
-              ) : 'ログイン'}
+              別のアカウントでログインし直す
             </button>
           </div>
         </div>
+        <WeeklyTimetablePreview tt={tt} />
+      </div>
+    );
+  }
 
-        {/* 1週間の時間割プレビュー */}
-        <div className="w-full max-w-2xl mt-8 mb-8">
-          <WeeklyTimetablePreview tt={tt} />
+  // ══════════════════════════════════
+  // ── 権限で断られた（ログインは有効）──
+  // ══════════════════════════════════
+  // ★ログインし直させないこと。入り直しても結果は変わらない。
+  //   ログアウトのボタンもここには置かない（ヘッダーにはある）。
+  if (meStatus === 'forbidden') {
+    return (
+      <div className="card shadow-lg shadow-stone-200/50">
+        <div className="text-center py-8">
+          <div className="text-4xl mb-3" aria-hidden="true">🚫</div>
+          <div className="font-bold text-[var(--ink)]">
+            {meMessage || 'このアカウントでは利用できません。先生にご連絡ください'}
+          </div>
+          <div className="text-xs text-[var(--ink3)] mt-2 leading-relaxed">
+            ログインし直しても変わりません。担当の先生にお伝えください。
+          </div>
+          <div className="text-xs text-[var(--ink3)] mt-3 leading-relaxed break-all">
+            いまログインしているアカウント：{user?.email}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ══════════════════════════════════
+  // ── 確認できなかった（ログインが切れた・通信の失敗）──
+  // ══════════════════════════════════
+  if (meStatus === 'error' || !student) {
+    return (
+      <div className="card shadow-lg shadow-stone-200/50">
+        <div className="text-center py-8">
+          <div className="text-4xl mb-3">🔑</div>
+          <div className="font-bold text-[var(--ink)]">ログインし直してください</div>
+          <div className="text-xs text-[var(--ink3)] mt-2 leading-relaxed">
+            確認できませんでした。一度ログアウトして、学校のアカウントで入り直してください。
+          </div>
+          <button
+            onClick={logout}
+            className="mt-6 px-5 py-2.5 rounded-xl bg-[var(--accent)] text-white text-sm font-bold hover:bg-blue-800 transition-all"
+          >
+            ログアウトする
+          </button>
         </div>
       </div>
     );
@@ -249,25 +270,31 @@ export default function StudentPage() {
   // ══════════════════════════════════
   if (!dow) {
     return (
-      <div className="card shadow-lg shadow-stone-200/50">
-        <StudentHeader student={student!} onLogout={handleLogout} />
-        <div className="text-center py-10 text-[var(--ink3)]">
-          <div className="text-4xl mb-3">🌙</div>
-          <div className="font-bold">今日は休日です</div>
-          <div className="text-xs mt-1">ゆっくり休んでください</div>
+      <div className="space-y-5">
+        <div className="card shadow-lg shadow-stone-200/50">
+          <StudentHeader student={student} onLogout={logout} />
+          <div className="text-center py-10 text-[var(--ink3)]">
+            <div className="text-4xl mb-3">🌙</div>
+            <div className="font-bold">今日は休日です</div>
+            <div className="text-xs mt-1">ゆっくり休んでください</div>
+          </div>
         </div>
+        <WeeklyTimetablePreview tt={tt} />
       </div>
     );
   }
 
   if (!isSchoolDay) {
     return (
-      <div className="card shadow-lg shadow-stone-200/50">
-        <StudentHeader student={student!} onLogout={handleLogout} />
-        <div className="text-center py-10 text-[var(--ink3)]">
-          <div className="text-4xl mb-3">🏠</div>
-          <div className="font-bold">{dow}曜日は登校日ではありません</div>
+      <div className="space-y-5">
+        <div className="card shadow-lg shadow-stone-200/50">
+          <StudentHeader student={student} onLogout={logout} />
+          <div className="text-center py-10 text-[var(--ink3)]">
+            <div className="text-4xl mb-3">🏠</div>
+            <div className="font-bold">{dow}曜日は登校日ではありません</div>
+          </div>
         </div>
+        <WeeklyTimetablePreview tt={tt} />
       </div>
     );
   }
@@ -279,7 +306,7 @@ export default function StudentPage() {
     <div className="space-y-5">
       {/* ヘッダーカード */}
       <div className="card shadow-lg shadow-stone-200/50 !pb-5">
-        <StudentHeader student={student!} onLogout={handleLogout} />
+        <StudentHeader student={student} onLogout={logout} />
 
         {/* 出席アクション */}
         <div className="mt-5 space-y-3">
@@ -353,12 +380,12 @@ export default function StudentPage() {
 
       {/* 今日の時間割 */}
       <div className="card shadow-lg shadow-stone-200/50">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
           <div>
             <div className="card-title !mb-0">今日の時間割</div>
             <div className="text-sm font-bold text-[var(--ink)] mt-1">{todayLabel()}</div>
           </div>
-          <div className={`text-xs font-bold text-white px-3 py-1 rounded-full ${DAY_STYLES[dow].header}`}>
+          <div className={`text-xs font-bold text-white px-3 py-1 rounded-full whitespace-nowrap ${DAY_STYLES[dow].header}`}>
             {DAY_ICONS[dow]} {dow}曜日
           </div>
         </div>
@@ -389,7 +416,7 @@ export default function StudentPage() {
                   <span className="text-xs font-bold text-[var(--ink2)]">{p.label}</span>
                   <span className="font-mono text-[9px] text-[var(--ink3)]">{p.time.split('〜')[0]}</span>
                 </div>
-                <div className="p-3 flex flex-col justify-center">
+                <div className="p-3 flex flex-col justify-center min-w-0">
                   {needsSelection ? (
                     <div>
                       <div className="text-xs font-bold text-amber-600 mb-2">{i}限目の教室を選んでください</div>
@@ -407,7 +434,7 @@ export default function StudentPage() {
                     </div>
                   ) : (
                     <>
-                      <div className="text-sm font-bold">{subj}</div>
+                      <div className="text-sm font-bold break-words">{subj}</div>
                       <div className="text-[11px] text-[var(--ink3)]">
                         {room}
                         {isSelectable && room && (
@@ -518,19 +545,19 @@ function StudentHeader({ student, onLogout }: {
   onLogout: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-200">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-blue-200 shrink-0">
           {student.name.charAt(0)}
         </div>
-        <div>
-          <div className="text-base font-bold">{student.name}</div>
+        <div className="min-w-0">
+          <div className="text-base font-bold truncate">{student.name}</div>
           <div className="text-xs text-[var(--ink3)]">
             {student.grade}{student.classroom === 'B教室' ? ' / B教室' : ''}
           </div>
         </div>
       </div>
-      <button onClick={onLogout} className="text-xs text-[var(--ink3)] hover:text-[var(--ink)] transition-colors px-3 py-1.5 rounded-lg hover:bg-[var(--surface2)]">
+      <button onClick={onLogout} className="text-xs text-[var(--ink3)] hover:text-[var(--ink)] transition-colors px-3 py-1.5 rounded-lg hover:bg-[var(--surface2)] whitespace-nowrap shrink-0">
         ログアウト
       </button>
     </div>
