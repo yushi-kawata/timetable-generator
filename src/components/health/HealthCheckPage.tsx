@@ -33,15 +33,10 @@ async function gasPost(body: unknown) {
   });
 }
 
-/* ── フォールバック名簿 ── */
-const NO_DAYS = { 月: false, 火: false, 水: false, 木: false, 金: false } as const;
-const FALLBACK_ROSTER: RosterEntry[] = [
-  '生徒01', '生徒02', '生徒03', '生徒04', '生徒05',
-  '生徒06', '生徒07', '生徒08', '生徒09', '生徒10',
-  '生徒11', '生徒12', '生徒13', '生徒14', '生徒15',
-  '生徒16', '生徒17', '生徒18', '生徒19', '生徒20',
-  '生徒21', '生徒22', '生徒23', '生徒24', '生徒25',
-].map((name) => ({ name, days: { ...NO_DAYS } }));
+/* ── フォールバック名簿 ──
+   名簿は窓口（GAS）から取得する。取得できなかった場合は空にする。
+   ここに実在・架空を問わず氏名を書かないこと（ビルド成果物は公開される）。 */
+const FALLBACK_ROSTER: RosterEntry[] = [];
 
 const CONDITIONS = ['良好', '不良', 'その他'] as const;
 const ATTENDANCES = ['出席', '欠席', '遅刻', '早退'] as const;
@@ -596,6 +591,11 @@ function RosterTab() {
 
       {loading ? (
         <div className="text-center text-[var(--ink3)] py-10">読み込み中...</div>
+      ) : roster.length === 0 ? (
+        <div className="text-center text-[var(--ink3)] py-10 text-sm leading-relaxed">
+          名簿を取得できませんでした。<br />
+          時間をおいて開き直してください。
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="mgmt-table">
