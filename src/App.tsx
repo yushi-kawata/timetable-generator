@@ -127,7 +127,11 @@ export function AppInner() {
     <div className="min-h-screen">
       {/* ヘッダー */}
       <header className="bg-[var(--ink)] text-white px-4 sm:px-8 py-4 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3 min-w-0">
+        {/* ★2026-09-09 意匠刷新 第1段：flex-wrap を足しただけ。
+            端末の文字サイズを200%にすると、題名と「生徒用」の札が横に並びきらず
+            画面が横にはみ出していた（幅320で74px）。折り返せるようにして止めている。
+            ヘッダーの作り直しそのものは第2段。 */}
+        <div className="flex items-center gap-3 min-w-0 flex-wrap">
           <h1 className="text-base font-bold flex items-center gap-2 whitespace-nowrap">
             <span>📅</span> 通学生ポータル
           </h1>

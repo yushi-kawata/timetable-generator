@@ -1,16 +1,80 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   意匠のトークン層（正本＝ ~/yushi-documents/意匠_時間割ツール_20260909_astra_v1.md）
+   「2．配色と、その役割」「3．タイポグラフィ」「6．モーション」のブロックをそのまま置く。
+   ★ここに具体色を足さないこと。画面側は bg-[var(--accent)] のように必ずこの名前を参照する。
+   ★2026-09-09 第1段：トークン層と生徒の「今日」画面まで。
+     教員側（AdminPage / TeacherPage）と健康観察は第2段以降なので、
+     そこが参照している旧い名前（--bg / --green / 曜日色）は消さずに残してある。
+   ========================================================================== */
 :root {
-  --bg: #f0ede8;
-  --surface: #fff;
-  --surface2: #f7f5f1;
-  --border: #e0dbd3;
-  --ink: #1c1917;
-  --ink2: #57534e;
-  --ink3: #a8a29e;
-  --accent: #1d4ed8;
-  --green: #0f766e;
-  --green-l: #f0fdf9;
+  color-scheme: light;
+
+  /* 地と面 */
+  --page: #F4F6F5;
+  --surface: #FFFFFF;
+  --surface2: #EDF2EF;
+
+  /* 文字：本文、補助、注記 */
+  --ink: #172C2A;
+  --ink2: #465D59;
+  --ink3: #60726D;
+
+  /* 構造の罫線と、操作部品の境界 */
+  --border: #D4DED8;
+  --border-strong: #7C8D88;
+
+  /* 主操作と現在位置 */
+  --accent: #145B50;
+  --accent-hover: #104B42;
+  --accent-active: #0C3C35;
+  --accent-soft: #E5F0EB;
+  --on-accent: #FFFFFF;
+
+  /* 状態：濃い色を文字・アイコン、淡い色を背景に使用 */
+  --success: #25633E;
+  --success-bg: #EDF6EE;
+
+  --warning: #805000;
+  --warning-bg: #FFF4DC;
+
+  --danger: #A52D32;
+  --danger-bg: #FCEEEF;
+
+  /* キーボード操作 */
+  --focus: #246CB0;
+
+  /* 操作できない状態。理由は別途通常色のテキストで表示 */
+  --disabled-bg: #E5EBE7;
+  --disabled-ink: #60726D;
+
+  /* 書体 ★Noto Sans JP の指定は外した（2026-09-09・川田さん承認済み） */
+  --font-ui:
+    system-ui, -apple-system, BlinkMacSystemFont,
+    "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, sans-serif;
+
+  /* 形 */
+  --radius-sheet: 8px;
+  --radius-control: 6px;
+
+  /* 余白 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* モーション */
+  --duration-press: 80ms;
+  --duration-feedback: 160ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ── ここから下は旧い名前。第2段までの互換用（新しい画面では使わない）── */
+  --bg: var(--page);
+  --green: var(--success);
+  --green-l: var(--success-bg);
   --mon: #7c3aed;
   --mon-l: #f5f3ff;
   --tue: #b45309;
@@ -23,13 +87,232 @@
   --fri-l: #fdf2f8;
 }
 
-body {
-  font-family: 'Noto Sans JP', system-ui, sans-serif;
-  background: var(--bg);
-  color: var(--ink);
+* {
+  box-sizing: border-box;
 }
 
-/* Card */
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  /* ★正本は 16px 固定だが rem にしてある。
+     見た目は既定（1rem = 16px）で正本と同一。
+     ブラウザの「文字サイズ」を大きくした人にも効かせるため、px で釘付けにしない。 */
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+/* 時刻・件数の数字。桁が動かないようにする */
+.numeric {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 1.5rem;   /* 24px */
+  line-height: 2rem;   /* 32px */
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 1.125rem;  /* 18px */
+  line-height: 1.625rem; /* 26px */
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   生徒の記録票（一枚の白い紙面。時限ごとにカードを作らない）
+   ========================================================================== */
+.student-shell {
+  width: 100%;
+  max-width: 480px;
+  margin-inline: auto;
+  padding: 12px 12px
+    calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.sheet {
+  min-width: 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+}
+
+.sheet-heading {
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--accent);
+}
+
+/* 見出しの罫線と、最初の節のあいだ */
+.sheet-heading + .sheet-section {
+  margin-top: 24px;
+}
+
+.sheet-section + .sheet-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+/* 罫線で区切った行（時間割・選択肢）。カードにしない */
+.ruled-row {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.ruled-row:first-of-type {
+  border-top: none;
+}
+
+/* ==========================================================================
+   出欠（この画面で深緑を塗るのはここだけ）
+   ========================================================================== */
+.attendance-action {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  padding: 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 1.25rem;  /* 20px */
+  line-height: 1.75rem; /* 28px */
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform var(--duration-press) ease-out;
+}
+
+@media (hover: hover) {
+  .attendance-action:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+}
+
+.attendance-action:active:not(:disabled) {
+  background: var(--accent-active);
+  transform: translateY(1px);
+}
+
+.attendance-action:disabled {
+  cursor: default;
+}
+
+/* 送信中は主操作の位置と見た目を保つ */
+.attendance-action[aria-busy="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* 受付時間外など、送信中以外の無効状態 */
+.attendance-action:disabled:not([aria-busy="true"]) {
+  background: var(--disabled-bg);
+  color: var(--disabled-ink);
+}
+
+/* 記録の結果を出す場所。押す前から高さを確保して、下の時間割を動かさない */
+.attendance-result {
+  min-height: 120px;
+  padding: 16px;
+  border-radius: var(--radius-control);
+}
+
+.feedback-enter {
+  animation:
+    feedback-in var(--duration-feedback) var(--ease-out) both;
+}
+
+@keyframes feedback-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 白地の枠線ボタン（週を見る・選ぶ・もう一度記録する など） */
+.control-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 1rem;     /* 16px */
+  line-height: 1.5rem; /* 24px */
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .control-button:hover {
+    background: var(--surface2);
+  }
+}
+
+/* 主操作の枠線ボタン版（別画面の「保存する」）。生徒の今日の画面では使わない */
+.primary-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+@media (hover: hover) {
+  .primary-button:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+}
+.primary-button:disabled {
+  border-color: var(--border-strong);
+  background: var(--disabled-bg);
+  color: var(--disabled-ink);
+  cursor: default;
+}
+
+/* 選択肢（ラジオ項目）。項目全体を押せる。最小48px */
+.choice-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.choice-row[data-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.table-scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* ==========================================================================
+   旧いクラス（教員側・健康観察がまだ使っている）。第2段で置き換える
+   ========================================================================== */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -46,7 +329,6 @@ body {
   margin-bottom: 16px;
 }
 
-/* Form */
 .form-label {
   font-size: 13px;
   font-weight: 600;
@@ -57,75 +339,67 @@ body {
   font-family: inherit;
   font-size: 14px;
   padding: 10px 14px;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--ink);
   max-width: 320px;
-  transition: border-color 0.2s;
 }
 .form-input:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
-/* Buttons */
 .btn-sub {
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   padding: 9px 18px;
-  border-radius: 10px;
-  border: 1.5px solid var(--border);
+  border-radius: var(--radius-control);
+  border: 1.5px solid var(--border-strong);
   background: var(--surface2);
   color: var(--ink2);
   cursor: pointer;
-  transition: all 0.2s;
 }
 .btn-sub:hover { background: var(--border); }
 .btn-danger {
   font-family: inherit;
   padding: 5px 12px;
-  border-radius: 8px;
-  border: none;
-  background: #fee2e2;
-  color: #b91c1c;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
   cursor: pointer;
   font-weight: 600;
 }
-.btn-danger:hover { background: #fecaca; }
 
-/* Select control */
 .sel-ctrl {
   font-family: inherit;
   font-size: 13px;
   padding: 8px 12px;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
 }
 
-/* Management table */
 .mgmt-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
 }
 .mgmt-table th {
   background: var(--surface2);
   color: var(--ink2);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.06em;
   padding: 10px 12px;
   text-align: left;
   border-bottom: 2px solid var(--border);
   white-space: nowrap;
 }
 .mgmt-table td {
-  padding: 9px 12px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
@@ -136,9 +410,9 @@ body {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  background: #eff6ff;
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -146,15 +420,13 @@ body {
   font-family: inherit;
   font-size: 13px;
   padding: 6px 10px;
-  border: 1.5px solid var(--border);
-  border-radius: 6px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--ink);
   width: 100%;
-  transition: border-color 0.2s;
 }
 .tbl-input:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -172,4 +444,28 @@ body {
   header, .btn-sub, .btn-danger, .sel-ctrl { display: none !important; }
   body { background: #fff; }
   .card { border: none; box-shadow: none; }
+  .sheet { border: none; }
+}
+
+/* ==========================================================================
+   ★キーボード操作の輪郭は最後に置く。
+     旧い .form-input:focus { outline: none } に負けないよう、順番で勝たせている。
+   ========================================================================== */
+:where(button, a, input, select, textarea, [role="radio"]):focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attendance-action {
+    transition: none;
+  }
+
+  .feedback-enter {
+    animation: none;
+  }
+
+  .animate-spin {
+    animation: none;
+  }
 }
