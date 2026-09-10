@@ -1,0 +1,189 @@
+============================================================
+ A4-41 職員/生徒の判定 実測  2026-09-10T04:51:40.161Z
+============================================================
+
+############ 本命：判定を入れた版 （gas-script.本番_A4-41_番人入り_20260908.js） ############
+
+--- 判定関数そのもの（23通り） ---
+  PASS  s26100012@yushi-kokusai.jp                 → student   1文字＋数字8桁
+  PASS  a00000001@yushi-kokusai.jp                 → student   別の頭文字
+  PASS  z99999999@yushi-kokusai.jp                 → student   数字9つ並びの端
+  PASS  s-hisho09@yushi-kokusai.jp                  → staff   ★s で始まるが職員
+  PASS  sa-sakai@yushi-kokusai.jp                  → staff   ハイフン前が2文字
+  PASS  s-hisho10@yushi-kokusai.jp                    → staff   ハイフン後が短い
+  PASS  s-kawata-jr@yushi-kokusai.jp               → staff   ハイフン2つ
+  PASS  S-Kawata@Yushi-Kokusai.JP                  → staff   大文字混じり
+  PASS    S26100012@Yushi-Kokusai.JP               → student   前後の空白＋大文字
+  PASS  s2610001@yushi-kokusai.jp                  → null   数字7桁＝想定外
+  PASS  s261000123@yushi-kokusai.jp                → null   数字9桁＝想定外
+  PASS  26100012@yushi-kokusai.jp                  → null   先頭が数字
+  PASS  ss26100012@yushi-kokusai.jp                → null   英字2文字＋数字8桁
+  PASS  kawata@yushi-kokusai.jp                    → null   ★ハイフン無し＝職員に倒さない
+  PASS  -kawata@yushi-kokusai.jp                   → null   ハイフンが先頭
+  PASS  kawata-@yushi-kokusai.jp                   → null   ハイフンが末尾
+  PASS  s-kawata@gmail.com                         → null   別ドメイン
+  PASS  s26100012@yushi-kokusai.jp.example.com     → null   似せたドメイン
+  PASS  s-hisho09@yushi-kokusai.jp.evil@x.com       → null   ★@ が2つ
+  PASS  s-hisho09@yushi-kokusai.jp@evil.com         → null   ★@ が2つ（別の形）
+  PASS  @yushi-kokusai.jp                          → null   @ の前が空
+  PASS  s26100012                                  → null   @ が無い
+  PASS  (空)                                        → null   空文字
+  PASS  判定 23通り すべて期待どおり
+
+--- ★生徒のトークンで getStudents（全生徒の名簿）を叩く ---
+  送ったもの: {"action":"getStudents","idToken":"TOK-STUDENT"}
+  返ったもの: {"error":"forbidden","reason":"staffOnly"}
+  PASS  ★拒否される  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  ★reason は staffOnly
+  PASS  ★他人の氏名が1件も返らない  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  ★dx_email が1件も返らない
+
+--- 職員のトークンなら getStudents は通る ---
+  PASS  TOK-STAFF → 通る（2件返る）  … 2件
+  PASS  TOK-STAFF → 平文パスワードは返らない
+  PASS  TOK-STAFF2 → 通る（2件返る）  … 2件
+  PASS  TOK-STAFF2 → 平文パスワードは返らない
+
+--- ★生徒のトークンで saveStudents（名簿の作り直し）を叩く ---
+  送ったもの: {"action":"saveStudents","idToken":"TOK-STUDENT","data":[],"confirmEmpty":true}
+  返ったもの: {"error":"forbidden","reason":"staffOnly"}
+  PASS  ★拒否される（staffOnly）  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  ★名簿が1行も変わっていない
+
+--- 職員だけの残りを生徒が叩く ---
+  PASS  getRecs      → 生徒は拒否・データ無傷  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  saveRec      → 生徒は拒否・データ無傷  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  deleteRec    → 生徒は拒否・データ無傷  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  clearRecs    → 生徒は拒否・データ無傷  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  saveTT       → 生徒は拒否・データ無傷  … {"error":"forbidden","reason":"staffOnly"}
+
+--- 生徒が使うアクションは通ること（登校できなくなっては困る）---
+  PASS  getMe → 通る（本人1件）  … {"ok":true,"student":{"name":"架空四郎","grade":"3","course":"通常","dx_email":"s26100004@yushi-
+  PASS  ★他人（架空太郎）は返らない
+  PASS  getTT → 通る  … {"月":{}}
+  PASS  dxCheckIn → 通る  … {"ok":true,"code":200}
+  PASS  checkIn → 通る  … {"ok":true}
+  PASS  savePeriod2 → 通る  … {"ok":true}
+
+--- getAttendance / getPeriod2（生徒には本人の行だけ）---
+  送ったもの: {"action":"getAttendance","idToken":"TOK-STUDENT","date":"2026-09-09"}
+  返ったもの: [{"date":"2026-09-09","name":"架空四郎","grade":"3","checkinTime":"09:05","checkoutTime":""}]
+  PASS  ★他人（架空太郎）の登校が返らない  … [{"date":"2026-09-09","name":"架空四郎","grade":"3","checkinTime":"09:05","checkoutTime":""}]
+  PASS  本人（架空四郎）の登校は返る  … [{"date":"2026-09-09","name":"架空四郎","grade":"3","checkinTime":"09:05","checkoutTime":""}]
+  getPeriod2 の返り: [{"week":"W37","name":"架空四郎","selections":{"月":{},"火":{},"水":{},"木":{},"金":{}}}]
+  PASS  ★他人（架空太郎）の2限選択が返らない  … [{"week":"W37","name":"架空四郎","selections":{"月":{},"火":{},"水":{},"木":{},"金":{}}}]
+  PASS  本人（架空四郎）の2限選択は返る  … [{"week":"W37","name":"架空四郎","selections":{"月":{},"火":{},"水":{},"木":{},"金":{}}}]
+  PASS  職員には全員分が返る  … [{"date":"2026-09-09","name":"架空太郎","grade":"1","checkinTime":"09:00","checkoutTime":""},{"date":"2026-09-09","name":"架空
+
+--- ★生徒とも職員とも判定できない形（kawata@…）---
+  PASS  getStudents  → 拒否（unknownAccount）  … {"error":"forbidden","reason":"unknownAccount"}
+  PASS  getMe        → 拒否（unknownAccount）  … {"error":"forbidden","reason":"unknownAccount"}
+  PASS  getTT        → 拒否（unknownAccount）  … {"error":"forbidden","reason":"unknownAccount"}
+  PASS  dxCheckIn    → 拒否（unknownAccount）  … {"error":"forbidden","reason":"unknownAccount"}
+
+--- 拒否の区別（画面が違う文言を出せるか）---
+  トークン無し: {"error":"unauthorized","reason":"signin"}
+  生徒:         {"error":"forbidden","reason":"staffOnly"}
+  PASS  ★「ログインし直せ」は unauthorized/signin  … {"error":"unauthorized","reason":"signin"}
+  PASS  ★「権限が無い」は forbidden/staffOnly  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  ★2つは別物として見分けられる
+
+--- GET の入口を生徒が直接叩く ---
+  PASS  GET getStudents → 生徒は拒否  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  GET getStudents → 氏名が返らない
+
+--- 操作の記録（audit に職員/生徒が残るか）---
+  audit の中身: 2026-09-10T04:51:40.192Z|s26100004@yushi-kokusai.jp|getStudents|ng|[student] denied:staffOnly|student  /  2026-09-10T04:51:40.192Z|s-hisho09@yushi-kokusai.jp|saveTT|ok|[staff] |staff
+  PASS  拒否も通過も記録される  … 2行
+  PASS  ★[student] と [staff] が残る  … [student] denied:staffOnly [staff] 
+  PASS  ★拒否の理由が残る  … [student] denied:staffOnly [staff] 
+  PASS  ★note にメールアドレスが入っていない  … [student] denied:staffOnly [staff] 
+  PASS  ★note に生徒の氏名が入っていない  … [student] denied:staffOnly [staff] 
+
+
+============================================================
+ ★負の対照：判定を入れる前の版で同じ試験が FAIL すること
+ （ここが全部 PASS になるなら、試験は何も検査していない）
+============================================================
+
+############ 負の対照：判定なし（@yushi-kokusai.jp なら誰でも通る版） （tmp_verify/control_a441_norole_20260909.js） ############
+
+--- 判定関数そのもの（23通り） ---
+  **FAIL**  判定関数 classifyRole_ がある  … ★この版には入っていません
+
+--- ★生徒のトークンで getStudents（全生徒の名簿）を叩く ---
+  送ったもの: {"action":"getStudents","idToken":"TOK-STUDENT"}
+  返ったもの: [{"name":"架空太郎","grade":"1","course":"通常","dx_email":"s26100001@yushi-kokusai.jp","has_password":true,"days":{"月":true,"火":false,"水":false,"木":false,"金":false}},{"name":"架空四郎","grade":"3","course":"通常","dx_email":"s26100004@yushi-kokusai.jp","has_password":true,"days":{"月":false,"火":false,"水":false,"木":true,"金":false}}]
+  **FAIL**  ★拒否される  … [{"name":"架空太郎","grade":"1","course":"通常","dx_email":"s26100001@yushi-kokusai.jp","has_pas
+  **FAIL**  ★reason は staffOnly
+  **FAIL**  ★他人の氏名が1件も返らない  … [{"name":"架空太郎","grade":"1","course":"通常","dx_email":"s26100001@yushi-kokusai.jp","has_pas
+  **FAIL**  ★dx_email が1件も返らない
+
+--- 職員のトークンなら getStudents は通る ---
+  PASS  TOK-STAFF → 通る（2件返る）  … 2件
+  PASS  TOK-STAFF → 平文パスワードは返らない
+  PASS  TOK-STAFF2 → 通る（2件返る）  … 2件
+  PASS  TOK-STAFF2 → 平文パスワードは返らない
+
+--- ★生徒のトークンで saveStudents（名簿の作り直し）を叩く ---
+  送ったもの: {"action":"saveStudents","idToken":"TOK-STUDENT","data":[],"confirmEmpty":true}
+  返ったもの: {"ok":true}
+  **FAIL**  ★拒否される（staffOnly）  … {"ok":true}
+  **FAIL**  ★名簿が1行も変わっていない  … 行数 1
+
+--- 職員だけの残りを生徒が叩く ---
+  **FAIL**  getRecs      → 生徒は拒否・データ無傷  … [{"id":1,"week":"W37","name":"架空太郎","grade":"1","days":[],"s
+  **FAIL**  saveRec      → 生徒は拒否・データ無傷  … {"ok":true}
+  **FAIL**  deleteRec    → 生徒は拒否・データ無傷  … {"ok":true}
+  **FAIL**  clearRecs    → 生徒は拒否・データ無傷  … {"ok":true}
+  **FAIL**  saveTT       → 生徒は拒否・データ無傷  … {"ok":true}
+
+--- 生徒が使うアクションは通ること（登校できなくなっては困る）---
+  PASS  getMe → 通る（本人1件）  … {"ok":true,"student":{"name":"架空四郎","grade":"3","course":"通常","dx_email":"s26100004@yushi-
+  PASS  ★他人（架空太郎）は返らない
+  PASS  getTT → 通る  … {"月":{}}
+  PASS  dxCheckIn → 通る  … {"ok":true,"code":200}
+  PASS  checkIn → 通る  … {"ok":true}
+  PASS  savePeriod2 → 通る  … {"ok":true}
+
+--- getAttendance / getPeriod2（生徒には本人の行だけ）---
+  送ったもの: {"action":"getAttendance","idToken":"TOK-STUDENT","date":"2026-09-09"}
+  返ったもの: [{"date":"2026-09-09","name":"架空太郎","grade":"1","checkinTime":"09:00","checkoutTime":""},{"date":"2026-09-09","name":"架空四郎","grade":"3","checkinTime":"09:05","checkoutTime":""}]
+  **FAIL**  ★他人（架空太郎）の登校が返らない  … [{"date":"2026-09-09","name":"架空太郎","grade":"1","checkinTime":"09:00","checkoutTime":""},{"date":"2026-09-09","name":"架空
+  PASS  本人（架空四郎）の登校は返る  … [{"date":"2026-09-09","name":"架空太郎","grade":"1","checkinTime":"09:00","checkoutTime":""},{"date":"2026-09-09","name":"架空
+  getPeriod2 の返り: [{"week":"W37","name":"架空太郎","selections":{"月":{},"火":{},"水":{},"木":{},"金":{}}},{"week":"W37","name":"架空四郎","selections":{"月":{},"火":{},"水":{},"木":{},"金":{}}}]
+  **FAIL**  ★他人（架空太郎）の2限選択が返らない  … [{"week":"W37","name":"架空太郎","selections":{"月":{},"火":{},"水":{},"木":{},"金":{}}},{"week":"W37","name":"架空四郎","selections"
+  PASS  本人（架空四郎）の2限選択は返る  … [{"week":"W37","name":"架空太郎","selections":{"月":{},"火":{},"水":{},"木":{},"金":{}}},{"week":"W37","name":"架空四郎","selections"
+  PASS  職員には全員分が返る  … [{"date":"2026-09-09","name":"架空太郎","grade":"1","checkinTime":"09:00","checkoutTime":""},{"date":"2026-09-09","name":"架空
+
+--- ★生徒とも職員とも判定できない形（kawata@…）---
+  **FAIL**  getStudents  → 拒否（unknownAccount）  … [{"name":"架空太郎","grade":"1","course":"通常","dx_email":"s26100001@yushi-
+  **FAIL**  getMe        → 拒否（unknownAccount）  … {"ok":false,"reason":"notEnrolled"}
+  **FAIL**  getTT        → 拒否（unknownAccount）  … {"月":{}}
+  **FAIL**  dxCheckIn    → 拒否（unknownAccount）  … {"ok":false,"reason":"notEnrolled","msg":"student not found"}
+
+--- 拒否の区別（画面が違う文言を出せるか）---
+  トークン無し: {"error":"unauthorized","reason":"signin"}
+  生徒:         [{"name":"架空太郎","grade":"1","course":"通常","dx_email":"s26100001@yushi-kokusai.jp","has_password":true,"days":{"月":true,"火":false,"水":false,"木":false,"金":false}},{"name":"架空四郎","grade":"3","course":"通常","dx_email":"s26100004@yushi-kokusai.jp","has_password":true,"days":{"月":false,"火":false,"水":false,"木":true,"金":false}}]
+  PASS  ★「ログインし直せ」は unauthorized/signin  … {"error":"unauthorized","reason":"signin"}
+  **FAIL**  ★「権限が無い」は forbidden/staffOnly  … [{"name":"架空太郎","grade":"1","course":"通常","dx_email":"s26100001@yushi-
+  PASS  ★2つは別物として見分けられる
+
+--- GET の入口を生徒が直接叩く ---
+  **FAIL**  GET getStudents → 生徒は拒否  … [{"name":"架空太郎","grade":"1","course":"通常","dx_email":"s26100001@yushi-kokusai.jp
+  **FAIL**  GET getStudents → 氏名が返らない
+
+--- 操作の記録（audit に職員/生徒が残るか）---
+  audit の中身: 2026-09-10T04:51:40.204Z|s-hisho09@yushi-kokusai.jp|saveTT|ok|
+  **FAIL**  拒否も通過も記録される  … 1行
+  **FAIL**  ★[student] と [staff] が残る
+  **FAIL**  ★拒否の理由が残る
+  PASS  ★note にメールアドレスが入っていない
+  PASS  ★note に生徒の氏名が入っていない
+
+============================================================
+ 本命（判定あり）      : FAIL 0 件  → 0 でなければならない
+ 負の対照（判定なし）  : FAIL 24 件  → 0 なら試験が壊れている
+============================================================
+
+=== 総合: PASS ===

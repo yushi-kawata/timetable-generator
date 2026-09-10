@@ -1,0 +1,116 @@
+============================================================
+ A4-41 audit への role 列追加 実測  2026-09-10T04:51:40.723Z
+============================================================
+
+############ 本命：role 列あり （gas-script.本番_A4-41_番人入り_20260908.js） ############
+
+--- A. audit シートが存在しない（初回）---
+    見出し | timestamp | email | action | ok | note | role
+      1行目 | 2026-09-10T04:51:40.729Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff]  | staff
+  PASS  audit が作られる
+  PASS  ★見出しが6列（role 入り）  … timestamp,email,action,ok,note,role
+  PASS  記録が1行入る  … 1行
+  PASS  role 列に staff が入る  … staff
+  PASS  note の頭の [staff] は残っている  … [staff] 
+
+--- B. ★見出しが5列・実データあり（いまの本番の状態）---
+  【貼る前】
+    見出し | timestamp | email | action | ok | note
+      1行目 | 2026-09-09T03:42:01.000Z | s-hisho09@yushi-kokusai.jp | saveStudents | ok | [staff] 12件 → 12件
+      2行目 | 2026-09-09T03:55:10.000Z | s26100004@yushi-kokusai.jp | dxCheckIn | ok | [student] code=200
+      3行目 | 2026-09-09T04:01:33.000Z | s26100004@yushi-kokusai.jp | getStudents | ng | [student] denied:staffOnly
+  【1回動かしたあと】
+    見出し | timestamp | email | action | ok | note | role
+      1行目 | 2026-09-09T03:42:01.000Z | s-hisho09@yushi-kokusai.jp | saveStudents | ok | [staff] 12件 → 12件
+      2行目 | 2026-09-09T03:55:10.000Z | s26100004@yushi-kokusai.jp | dxCheckIn | ok | [student] code=200
+      3行目 | 2026-09-09T04:01:33.000Z | s26100004@yushi-kokusai.jp | getStudents | ng | [student] denied:staffOnly
+      4行目 | 2026-09-10T04:51:40.731Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff]  | staff
+      5行目 | 2026-09-10T04:51:40.731Z | s26100004@yushi-kokusai.jp | getStudents | ng | [student] denied:staffOnly | student
+  PASS  ★見出しの6列目に role が足された  … timestamp,email,action,ok,note,role
+  PASS  ★見出しの1〜5列目は元のまま  … timestamp,email,action,ok,note
+  PASS  ★既存の3行が1マスも書き換わっていない
+  PASS  ★既存の行の role 欄は空のまま（過去は [student] で読める）  … 5列
+  PASS  新しい行が2行足された  … 2行
+  PASS  ★新しい行の role 列に staff / student が入る  … staff,student
+  PASS  ★note の頭の [staff] / [student] は残っている  … [staff]  / [student] denied:staffOnly
+  PASS  ★role 列に括弧は付かない  … staff,student
+  PASS  ★note にメールアドレスが入っていない  … [staff]  / [student] denied:staffOnly
+  PASS  ★note に生徒の氏名が入っていない
+  PASS  ★audit 以外の台帳を書き換えていない  … 書いたシート: 
+
+--- C. 見出しがすでに6列（2回目以降）---
+    見出し | timestamp | email | action | ok | note | role
+      1行目 | 2026-09-09T05:00:00.000Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff]  | staff
+      2行目 | 2026-09-10T04:51:40.732Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff]  | staff
+      3行目 | 2026-09-10T04:51:40.732Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff]  | staff
+  PASS  ★見出しは6列のまま（7列目に増えていない）  … 6列
+  PASS  ★role の見出しが二重に入っていない  … timestamp,email,action,ok,note,role
+  PASS  書き込み回数は追記2回だけ（見出しを書き直していない）  … 2回
+
+--- F. ★audit が書けない状況でも本体が止まらないこと ---
+  返ったもの: {"ok":true,"code":200}
+  PASS  ★例外で落ちない
+  PASS  ★生徒の打刻はちゃんと成功する  … {"ok":true,"code":200}
+
+
+============================================================
+ ★負の対照：role 列を足す前の版で同じ試験が FAIL すること
+ （ここが全部 PASS になるなら、試験は何も検査していない）
+============================================================
+
+############ 負の対照：role 列なし（note の [student] だけの版） （tmp_verify/control_a441_norolecol_20260909.js） ############
+
+--- A. audit シートが存在しない（初回）---
+    見出し | timestamp | email | action | ok | note
+      1行目 | 2026-09-10T04:51:40.735Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff] 
+  PASS  audit が作られる
+  **FAIL**  ★見出しが6列（role 入り）  … timestamp,email,action,ok,note
+  PASS  記録が1行入る  … 1行
+  **FAIL**  role 列に staff が入る  … undefined
+  PASS  note の頭の [staff] は残っている  … [staff] 
+
+--- B. ★見出しが5列・実データあり（いまの本番の状態）---
+  【貼る前】
+    見出し | timestamp | email | action | ok | note
+      1行目 | 2026-09-09T03:42:01.000Z | s-hisho09@yushi-kokusai.jp | saveStudents | ok | [staff] 12件 → 12件
+      2行目 | 2026-09-09T03:55:10.000Z | s26100004@yushi-kokusai.jp | dxCheckIn | ok | [student] code=200
+      3行目 | 2026-09-09T04:01:33.000Z | s26100004@yushi-kokusai.jp | getStudents | ng | [student] denied:staffOnly
+  【1回動かしたあと】
+    見出し | timestamp | email | action | ok | note
+      1行目 | 2026-09-09T03:42:01.000Z | s-hisho09@yushi-kokusai.jp | saveStudents | ok | [staff] 12件 → 12件
+      2行目 | 2026-09-09T03:55:10.000Z | s26100004@yushi-kokusai.jp | dxCheckIn | ok | [student] code=200
+      3行目 | 2026-09-09T04:01:33.000Z | s26100004@yushi-kokusai.jp | getStudents | ng | [student] denied:staffOnly
+      4行目 | 2026-09-10T04:51:40.736Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff] 
+      5行目 | 2026-09-10T04:51:40.736Z | s26100004@yushi-kokusai.jp | getStudents | ng | [student] denied:staffOnly
+  **FAIL**  ★見出しの6列目に role が足された  … timestamp,email,action,ok,note
+  PASS  ★見出しの1〜5列目は元のまま  … timestamp,email,action,ok,note
+  PASS  ★既存の3行が1マスも書き換わっていない
+  PASS  ★既存の行の role 欄は空のまま（過去は [student] で読める）  … 5列
+  PASS  新しい行が2行足された  … 2行
+  **FAIL**  ★新しい行の role 列に staff / student が入る  … undefined,undefined
+  PASS  ★note の頭の [staff] / [student] は残っている  … [staff]  / [student] denied:staffOnly
+  PASS  ★role 列に括弧は付かない  … undefined,undefined
+  PASS  ★note にメールアドレスが入っていない  … [staff]  / [student] denied:staffOnly
+  PASS  ★note に生徒の氏名が入っていない
+  PASS  ★audit 以外の台帳を書き換えていない  … 書いたシート: 
+
+--- C. 見出しがすでに6列（2回目以降）---
+    見出し | timestamp | email | action | ok | note | role
+      1行目 | 2026-09-09T05:00:00.000Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff]  | staff
+      2行目 | 2026-09-10T04:51:40.737Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff] 
+      3行目 | 2026-09-10T04:51:40.737Z | s-hisho09@yushi-kokusai.jp | saveTT | ok | [staff] 
+  PASS  ★見出しは6列のまま（7列目に増えていない）  … 6列
+  PASS  ★role の見出しが二重に入っていない  … timestamp,email,action,ok,note,role
+  PASS  書き込み回数は追記2回だけ（見出しを書き直していない）  … 2回
+
+--- F. ★audit が書けない状況でも本体が止まらないこと ---
+  返ったもの: {"ok":true,"code":200}
+  PASS  ★例外で落ちない
+  PASS  ★生徒の打刻はちゃんと成功する  … {"ok":true,"code":200}
+
+============================================================
+ 本命（role 列あり）    : FAIL 0 件  → 0 でなければならない
+ 負の対照（role 列なし）: FAIL 4 件  → 0 なら試験が壊れている
+============================================================
+
+=== 総合: PASS ===

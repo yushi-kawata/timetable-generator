@@ -1,0 +1,151 @@
+============================================================
+ A4-41 自己診断のローカル実測  2026-09-10T04:51:40.265Z
+============================================================
+
+########## 本命：名簿の dx_email が学校ドメインのとき ##########
+
+--- 実際に表示される文面（そのまま） ---
+  | FIREBASE_API_KEY: OK（設定されています）
+  | 番人(verifyIdToken_): OK
+  | トークン無し: 拒否 OK
+  | デタラメなトークン: 拒否 OK
+  | ドメイン判定（7通り）: OK
+  | 読み取り系アクション: 5件（getRecs, getStudents, getAttendance, getPeriod2, getTT）
+  | 職員/生徒の判定（16通り）: OK
+  | 職員だけが叩けるアクション: 7件（getStudents, saveStudents, getRecs, saveRec, deleteRec, clearRecs, saveTT）
+  | 生徒は名簿を読めない・消せない: OK（職員は通ります）
+  | 生徒が使うアクション8件: OK（通ります）
+  | パスワード据え置き(keepPassword_): OK
+  | getMe: OK（Googleログインだけで本人を割り出す窓口が入っています）
+  | authStudent のパスワード比較: OK（残っていません＝生徒はパスワードを打ちません）
+  | dxCheckIn: OK（登校・下校QRは生きています）
+  | 本文のメールを読んでいない: OK（他人の登校は登録できません）
+  | dxUrl の行き先を確認している: OK（you-net-dx.jp 以外へは送りません）
+  | 行き先の判定（14通り）: OK
+  | audit シート: まだありません（最初の記録のときに6列で作られます）
+  | 名簿シート students: 2件
+  | dx_email が学校ドメイン(@yushi-kokusai.jp): 2件 → この人たちは通ります
+  | dx_email が空: 0件
+  | dx_email が別ドメイン: 0件
+
+  PASS  例外なく最後まで走る
+  PASS  ★シートを1回も書き換えていない  … write=0
+  PASS  ★audit シートも作らない  … 作られたシート: 
+  PASS  getMe: OK と出る
+  PASS  authStudent のパスワード比較: OK と出る
+  PASS  dxCheckIn: OK と出る
+  PASS  ★本文のメールを読んでいない: OK と出る（2026-09-09 追加）
+  PASS  学校ドメイン2件と数える
+  PASS  ★全員締め出しの警告は出ない
+  PASS  ★生徒の氏名が出ていない
+  PASS  ★メールアドレスが出ていない
+  PASS  ★平文パスワードが出ていない
+
+########## ★危険：名簿の dx_email が学校ドメインでないとき ##########
+
+--- 実際に表示される文面（そのまま） ---
+  | FIREBASE_API_KEY: OK（設定されています）
+  | 番人(verifyIdToken_): OK
+  | トークン無し: 拒否 OK
+  | デタラメなトークン: 拒否 OK
+  | ドメイン判定（7通り）: OK
+  | 読み取り系アクション: 5件（getRecs, getStudents, getAttendance, getPeriod2, getTT）
+  | 職員/生徒の判定（16通り）: OK
+  | 職員だけが叩けるアクション: 7件（getStudents, saveStudents, getRecs, saveRec, deleteRec, clearRecs, saveTT）
+  | 生徒は名簿を読めない・消せない: OK（職員は通ります）
+  | 生徒が使うアクション8件: OK（通ります）
+  | パスワード据え置き(keepPassword_): OK
+  | getMe: OK（Googleログインだけで本人を割り出す窓口が入っています）
+  | authStudent のパスワード比較: OK（残っていません＝生徒はパスワードを打ちません）
+  | dxCheckIn: OK（登校・下校QRは生きています）
+  | 本文のメールを読んでいない: OK（他人の登校は登録できません）
+  | dxUrl の行き先を確認している: OK（you-net-dx.jp 以外へは送りません）
+  | 行き先の判定（14通り）: OK
+  | audit シート: まだありません（最初の記録のときに6列で作られます）
+  | 名簿シート students: 3件
+  | dx_email が学校ドメイン(@yushi-kokusai.jp): 0件
+  | dx_email が空: 1件 ★この人たちは締め出されます（notEnrolled）
+  | dx_email が別ドメイン: 2件 ★この人たちは締め出されます（notEnrolled）
+  | ★★ 名簿の dx_email が1件も学校ドメインではありません。
+  | ★★ このまま貼ると【生徒全員】が「名簿にありません」になります。
+  | ★★ 貼る前に名簿の dx_email を学校の Google アカウントにそろえてください。
+
+  PASS  ★「生徒全員」が締め出される警告が出る
+  PASS  別ドメイン2件・空1件と数える
+  PASS  ★シートを1回も書き換えていない  … write=0
+  PASS  ★生徒の氏名・メールが出ていない
+
+########## 混在（一部だけ学校ドメイン・重複あり）##########
+
+--- 実際に表示される文面（そのまま） ---
+  | FIREBASE_API_KEY: OK（設定されています）
+  | 番人(verifyIdToken_): OK
+  | トークン無し: 拒否 OK
+  | デタラメなトークン: 拒否 OK
+  | ドメイン判定（7通り）: OK
+  | 読み取り系アクション: 5件（getRecs, getStudents, getAttendance, getPeriod2, getTT）
+  | 職員/生徒の判定（16通り）: OK
+  | 職員だけが叩けるアクション: 7件（getStudents, saveStudents, getRecs, saveRec, deleteRec, clearRecs, saveTT）
+  | 生徒は名簿を読めない・消せない: OK（職員は通ります）
+  | 生徒が使うアクション8件: OK（通ります）
+  | パスワード据え置き(keepPassword_): OK
+  | getMe: OK（Googleログインだけで本人を割り出す窓口が入っています）
+  | authStudent のパスワード比較: OK（残っていません＝生徒はパスワードを打ちません）
+  | dxCheckIn: OK（登校・下校QRは生きています）
+  | 本文のメールを読んでいない: OK（他人の登校は登録できません）
+  | dxUrl の行き先を確認している: OK（you-net-dx.jp 以外へは送りません）
+  | 行き先の判定（14通り）: OK
+  | audit シート: まだありません（最初の記録のときに6列で作られます）
+  | 名簿シート students: 4件
+  | dx_email が学校ドメイン(@yushi-kokusai.jp): 2件 → この人たちは通ります
+  | dx_email が空: 1件 ★この人たちは締め出されます（notEnrolled）
+  | dx_email が別ドメイン: 1件 ★この人たちは締め出されます（notEnrolled）
+  | ★同じ dx_email が重複: 1件（getMe は先に見つかった行を返します）
+
+  PASS  学校ドメイン2件（大文字混じりも数える）
+  PASS  ★同じ dx_email の重複を見つける
+  PASS  一部でも通るなら全員締め出しの警告は出ない
+
+########## FIREBASE_API_KEY 未設定のとき ##########
+  PASS  ★未設定だと NG と出る  … FIREBASE_API_KEY: NG ★未設定です。このままだと全部拒否されます（プロジェクトの設定→スクリプト プロパティ）
+
+########## ★負の対照：getMe が無い古い版（gas-script.本番_修正版_20260902.js）##########
+ （ここが全部 PASS になるなら、診断は何も検査していない）
+  PASS  ★古い版だと「入っていない」と分かる  … (自己診断の関数がありません)
+
+########## ★検査装置そのものの検査：新しい診断を「修正前のコード」に向ける ##########
+
+--- 新しい診断が「修正前のコード」に対して出す文面 ---
+  | FIREBASE_API_KEY: OK（設定されています）
+  | 番人(verifyIdToken_): OK
+  | トークン無し: 拒否 OK
+  | デタラメなトークン: 拒否 OK
+  | ドメイン判定（7通り）: OK
+  | 読み取り系アクション: 5件（getRecs, getStudents, getAttendance, getPeriod2, getTT）
+  | 職員/生徒の判定（16通り）: OK
+  | 職員だけが叩けるアクション: 7件（getStudents, saveStudents, getRecs, saveRec, deleteRec, clearRecs, saveTT）
+  | 生徒は名簿を読めない・消せない: OK（職員は通ります）
+  | 生徒が使うアクション8件: OK（通ります）
+  | パスワード据え置き(keepPassword_): OK
+  | getMe: NG ★入っていません。生徒は誰も自分の時間割を出せません（貼り付けが古い版のままです）
+  | authStudent のパスワード比較: NG ★まだ残っています。貼り付けが古い版のままです
+  | dxCheckIn: OK（登校・下校QRは生きています）
+  | 本文のメールを読んでいる: NG ★他人になりすませます。貼り付けが古い版のままです
+  | dxUrl の行き先を確認していない: NG ★生徒のログイン済みcookieを他所へ送れます
+  | 行き先の判定（14通り）: OK
+  | audit シート: まだありません（最初の記録のときに6列で作られます）
+  | 名簿シート students: 2件
+  | dx_email が学校ドメイン(@yushi-kokusai.jp): 2件 → この人たちは通ります
+  | dx_email が空: 0件
+  | dx_email が別ドメイン: 0件
+
+  PASS  ★修正前だと getMe: NG と言う
+  PASS  ★修正前だと パスワード比較: NG と言う
+  PASS  ★修正前だと「本文のメールを読んでいる: NG」と言う
+  PASS  ★このときもシートを書き換えない  … write=0
+
+============================================================
+ FAIL 0 件  → 0 でなければならない
+============================================================
+
+=== 総合: PASS ===

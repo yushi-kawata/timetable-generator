@@ -1,0 +1,284 @@
+============================================================
+ A4-72 保健の窓口 番人のローカル実測 v2  2026-09-10T05:02:23.959Z
+============================================================
+ ★2026-09-10 設計変更（社長決裁A案）＝人ではなく【操作】で分ける。
+ 「保健委員の生徒も入力している」ことが確認されたため、
+ 「5アクション全部を職員のみ」から次に改めた。
+
+   生徒（ログイン済み）に通す : roster / submit   ＝保健委員の作業
+   職員だけ                   : allRoster / records / updateRoster
+   無認証                     : 5アクション全部拒否（★ここは変えない＝穴の本体）
+   判定できないメール         : 5アクション全部拒否
+
+ ★v1 から反転させた試験ケース（期待値だけ書き換えず、検査の中身を作り直した）:
+   1) 生徒×roster : 「拒否される」→「通る。ただし★健康記録の中身は返らない」
+      ＝氏名まで禁止にすると「名簿を見て入力する」作業が成立しないため、
+      「氏名は渡す／健康記録（体調・出欠・欠席理由）は渡さない」に検査を作り直した
+   2) 生徒×submit : 「拒否される・シート無傷」→「通る。★記録が1行増える。
+      名簿は変わらない。★audit に role=student で残る（誰が入力したか追える）」
+
+ ★反転させなかったもの（穴の本体なので対照版で必ずFAILが出るべき）:
+   ・無認証で5アクション全部が拒否されること
+   ・無認証で氏名が返らないこと
+   ・無認証で submit が書けないこと
+   ・0件での名簿上書きが拒否されること（refuseWipe）
+============================================================
+
+############ 本命：番人を入れた版 （gas-health-check.js） ############
+
+--- 弾かれるべき6パターン（5アクション全部・POST）---
+  PASS  トークン無し                 → 5アクション全部が unauthorized/signin
+  PASS  トークン無し                 → シートを1行も書き換えていない
+  PASS  トークン無し                 → ★氏名・健康記録が1文字も返らない
+  PASS  デタラメなトークン              → 5アクション全部が unauthorized/signin
+  PASS  デタラメなトークン              → シートを1行も書き換えていない
+  PASS  デタラメなトークン              → ★氏名・健康記録が1文字も返らない
+  PASS  期限切れ                   → 5アクション全部が unauthorized/signin
+  PASS  期限切れ                   → シートを1行も書き換えていない
+  PASS  期限切れ                   → ★氏名・健康記録が1文字も返らない
+  PASS  別ドメイン(gmail)           → 5アクション全部が unauthorized/signin
+  PASS  別ドメイン(gmail)           → シートを1行も書き換えていない
+  PASS  別ドメイン(gmail)           → ★氏名・健康記録が1文字も返らない
+  PASS  メール未確認                 → 5アクション全部が unauthorized/signin
+  PASS  メール未確認                 → シートを1行も書き換えていない
+  PASS  メール未確認                 → ★氏名・健康記録が1文字も返らない
+  PASS  トークンが文字列でない            → 5アクション全部が unauthorized/signin
+  PASS  トークンが文字列でない            → シートを1行も書き換えていない
+  PASS  トークンが文字列でない            → ★氏名・健康記録が1文字も返らない
+
+  送ったもの（無認証・allRoster）: {"action":"allRoster"}
+  返ったもの: {"error":"unauthorized","reason":"signin"}
+
+--- ★生徒のトークン（s26100012…）で【職員だけの3つ】を叩く ---
+  PASS  allRoster     → forbidden/staffOnly・名簿と記録は無傷・氏名なし
+  PASS  allRoster     → 拒否が audit に1行残る  … 1行
+  PASS  records       → forbidden/staffOnly・名簿と記録は無傷・氏名なし
+  PASS  records       → 拒否が audit に1行残る  … 1行
+  PASS  updateRoster  → forbidden/staffOnly・名簿と記録は無傷・氏名なし
+  PASS  updateRoster  → 拒否が audit に1行残る  … 1行
+
+--- ★生徒（保健委員）が roster で名簿を見る＝通ること ---
+  送ったもの: {"action":"roster","idToken":"TOK-STUDENT","day":"月"}
+  返ったもの: {"students":["【氏名】"]}
+  PASS  ★通る（拒否されない）  … {"students":["架空太郎"]}
+  PASS  ★その曜日の名簿が返る（1件）  … 1件
+  PASS  ★健康記録の中身（体調・出欠・欠席理由）は1つも返らない
+  PASS  ★読むだけ＝名簿・記録を1行も書き換えない
+
+--- ★生徒（保健委員）が submit で記録を入力する＝通ること ---
+  PASS  ★通る（拒否されない）  … {"ok":true,"success":true,"count":1}
+  PASS  ★記録が1行増える  … 4行 → 5行
+  PASS  ★名簿は1行も変わらない
+  PASS  ★入力が audit に残る（role=student）  … student/ok
+  PASS  ★audit に健康記録の中身が入っていない
+
+--- ★生徒が records（その日の一覧）を叩くと拒否＝他人の体調は見えない ---
+  PASS  forbidden/staffOnly で拒否  … {"error":"forbidden","reason":"staffOnly"}
+  PASS  ★他人の体調・欠席理由が1つも返らない
+
+--- ★生徒とも職員とも判定できない形（kawata@…）---
+  PASS  roster        → forbidden/unknownAccount  … {"error":"forbidden","reason":"unknownAccount"}
+  PASS  records       → forbidden/unknownAccount  … {"error":"forbidden","reason":"unknownAccount"}
+  PASS  allRoster     → forbidden/unknownAccount  … {"error":"forbidden","reason":"unknownAccount"}
+  PASS  submit        → forbidden/unknownAccount  … {"error":"forbidden","reason":"unknownAccount"}
+  PASS  updateRoster  → forbidden/unknownAccount  … {"error":"forbidden","reason":"unknownAccount"}
+
+--- 職員のトークンなら5アクションが通る（★件数だけ見る）---
+  PASS  TOK-STAFF roster（月）→ 1件  … {"students":["架空太郎"]}
+  PASS  TOK-STAFF records（2026-09-10）→ 2件  … 2件
+  PASS  TOK-STAFF allRoster → 2件  … 2件
+  PASS  TOK-STAFF2 roster（月）→ 1件  … {"students":["架空太郎"]}
+  PASS  TOK-STAFF2 records（2026-09-10）→ 2件  … 2件
+  PASS  TOK-STAFF2 allRoster → 2件  … 2件
+  PASS  submit → 記録が1行増える  … {"ok":true,"success":true,"count":1} / 5行
+  PASS  updateRoster → 名簿が見出し＋1件になる  … {"ok":true,"success":true,"count":1} / 2行
+
+--- ★GET で書き込みを叩く（正しい職員トークン付き＝CSRFの形）---
+  PASS  GET submit        → forbidden/postOnly  … {"error":"forbidden","reason":"postOnly"}
+  PASS  GET submit        → ★名簿・記録を1行も書き換えていない
+  PASS  GET updateRoster  → forbidden/postOnly  … {"error":"forbidden","reason":"postOnly"}
+  PASS  GET updateRoster  → ★名簿・記録を1行も書き換えていない
+
+--- GET の読み取りも番人の後ろにあること（無認証）---
+  PASS  GET roster        → unauthorized・氏名なし  … {"error":"unauthorized","reason":"signin"} 
+  PASS  GET records       → unauthorized・氏名なし  … {"error":"unauthorized","reason":"signin"} 
+  PASS  GET allRoster     → unauthorized・氏名なし  … {"error":"unauthorized","reason":"signin"} 
+
+--- ★0件で名簿を上書きしようとする（職員トークン）---
+  送ったもの: {"action":"updateRoster","idToken":"TOK-STAFF","roster":[]}
+  返ったもの: {"ok":false,"reason":"refuseWipe","prev":2}
+  PASS  ★refuseWipe で拒否  … {"ok":false,"reason":"refuseWipe","prev":2}
+  PASS  ★既存の件数(prev:2)を返す  … {"ok":false,"reason":"refuseWipe","prev":2}
+  PASS  ★名簿が1行も変わっていない  … 3行
+  PASS  ★氏名の無い行だけ→ refuseWipe・名簿無傷  … {"ok":false,"reason":"refuseWipe","prev":2}
+  PASS  ★配列でない→ badPayload・名簿無傷  … {"ok":false,"reason":"badPayload"}
+  PASS  confirmEmpty: true なら通る（見出しだけ残る）  … {"ok":true,"success":true,"count":0}
+  PASS  submit の日付が壊れている→ badPayload・記録無傷  … {"ok":false,"reason":"badPayload"}
+
+--- 例外の中身（シート名など）を外に返さない ---
+  PASS  内部の事情が返らない  … {"ok":false,"error":"bad request"}
+  PASS  bad request として返る  … {"ok":false,"error":"bad request"}
+  PASS  本文が壊れていても落ちない  … {"ok":false,"error":"bad request"}
+
+--- 操作の記録（audit）---
+  audit の行数: 3
+  PASS  audit シートができる
+  PASS  ★無認証は記録しない（外から行を増やせないように）  … 3行
+  PASS  拒否の理由が残る（staffOnly / postOnly）  … [student] denied:staffOnly via POST [staff] denied:postOnly（GETでは書き込みません） [staff] 2026-09-10 0件を置き換え → 1件
+  PASS  ★note に氏名・健康記録が入っていない
+  PASS  role 列がある（staff / student）
+
+--- 自己診断 HC_番人_自己診断 ---
+  | 貼る場所: OK（健康観察のプロジェクトです）
+  | FIREBASE_API_KEY: OK（設定されています）
+  | 番人(verifyIdToken_): OK
+  | トークン無し: 拒否 OK
+  | デタラメなトークン: 拒否 OK
+  | ドメイン判定（7通り）: OK
+  | 職員/生徒の判定（16通り）: OK
+  | 職員: OK（5アクション全部通ります）
+  | 生徒（保健委員）が使えるもの: OK（roster, submit が通ります）
+  | 職員だけのもの: OK（allRoster, records, updateRoster は生徒には渡しません）
+  | 判定できないアカウント: OK（5アクション全部拒否します）
+  | GETでの書き込み拒否: OK（submit, updateRoster は POST でしか受けません）
+  | 0件上書きの拒否(refuseWipe): OK
+  | 例外の中身を外に出さない: OK
+  | シート「名簿」: OK（2件）
+  | シート「記録」: OK（3件）
+  | audit シート: まだありません（最初の記録のときに6列で作られます）
+  PASS  ★シートを1行も書き換えない  … write=0
+  PASS  ★audit シートを作らない
+  PASS  ★氏名・健康記録を出さない
+  PASS  貼る場所: OK と出る
+  PASS  職員: OK と出る
+  PASS  ★生徒（保健委員）が使えるもの: OK と出る
+  PASS  ★職員だけのもの: OK と出る
+  PASS  判定できないアカウント: OK と出る
+  PASS  ★自己診断が roster / submit を生徒に通すと言っている  … 生徒（保健委員）が使えるもの: OK（roster, submit が通ります）
+  PASS  GETでの書き込み拒否: OK と出る
+  PASS  0件上書きの拒否(refuseWipe): OK と出る
+  PASS  職員/生徒の判定（16通り）: OK と出る
+  PASS  例外の中身を外に出さない: OK と出る  … 例外の中身を外に出さない: OK
+  PASS  ★NG と ★ 付きの行が1つも無い
+  PASS  ★貼る場所の間違いを検出する  … 貼る場所: ★★NG 貼る場所を間違えています。このプロジェクトは別のスプレッドシート（時間割ツール本体？）に紐づいています。すぐに元のコードを貼り戻してくださ
+  PASS  FIREBASE_API_KEY 未設定を NG と言う
+
+
+============================================================
+ ★負の対照：番人が無い版で、同じ試験が FAIL すること
+ （ここが全部 PASS になるなら、試験は何も検査していない）
+============================================================
+
+############ 負の対照：番人なし（貼る前の版） （tmp_verify/control_a472_before_20260910.js） ############
+
+--- 弾かれるべき6パターン（5アクション全部・POST）---
+  **FAIL**  トークン無し                 → 5アクション全部が unauthorized/signin
+  **FAIL**  トークン無し                 → シートを1行も書き換えていない
+  PASS  トークン無し                 → ★氏名・健康記録が1文字も返らない
+  **FAIL**  デタラメなトークン              → 5アクション全部が unauthorized/signin
+  **FAIL**  デタラメなトークン              → シートを1行も書き換えていない
+  PASS  デタラメなトークン              → ★氏名・健康記録が1文字も返らない
+  **FAIL**  期限切れ                   → 5アクション全部が unauthorized/signin
+  **FAIL**  期限切れ                   → シートを1行も書き換えていない
+  PASS  期限切れ                   → ★氏名・健康記録が1文字も返らない
+  **FAIL**  別ドメイン(gmail)           → 5アクション全部が unauthorized/signin
+  **FAIL**  別ドメイン(gmail)           → シートを1行も書き換えていない
+  PASS  別ドメイン(gmail)           → ★氏名・健康記録が1文字も返らない
+  **FAIL**  メール未確認                 → 5アクション全部が unauthorized/signin
+  **FAIL**  メール未確認                 → シートを1行も書き換えていない
+  PASS  メール未確認                 → ★氏名・健康記録が1文字も返らない
+  **FAIL**  トークンが文字列でない            → 5アクション全部が unauthorized/signin
+  **FAIL**  トークンが文字列でない            → シートを1行も書き換えていない
+  PASS  トークンが文字列でない            → ★氏名・健康記録が1文字も返らない
+
+  送ったもの（無認証・allRoster）: {"action":"allRoster"}
+  返ったもの: {"error":"Unknown action"}
+
+--- ★生徒のトークン（s26100012…）で【職員だけの3つ】を叩く ---
+  **FAIL**  allRoster     → forbidden/staffOnly・名簿と記録は無傷・氏名なし  … {"error":"Unknown action"}
+  **FAIL**  allRoster     → 拒否が audit に1行残る  … 0行
+  **FAIL**  records       → forbidden/staffOnly・名簿と記録は無傷・氏名なし  … {"error":"Unknown action"}
+  **FAIL**  records       → 拒否が audit に1行残る  … 0行
+  **FAIL**  updateRoster  → forbidden/staffOnly・名簿と記録は無傷・氏名なし  … {"success":true}
+  **FAIL**  updateRoster  → 拒否が audit に1行残る  … 0行
+
+--- ★生徒（保健委員）が roster で名簿を見る＝通ること ---
+  送ったもの: {"action":"roster","idToken":"TOK-STUDENT","day":"月"}
+  返ったもの: {"error":"Unknown action"}
+  **FAIL**  ★通る（拒否されない）  … {"error":"Unknown action"}
+  **FAIL**  ★その曜日の名簿が返る（1件）  … {"error":"Unknown action"}
+  PASS  ★健康記録の中身（体調・出欠・欠席理由）は1つも返らない
+  PASS  ★読むだけ＝名簿・記録を1行も書き換えない
+
+--- ★生徒（保健委員）が submit で記録を入力する＝通ること ---
+  PASS  ★通る（拒否されない）  … {"success":true,"count":1}
+  PASS  ★記録が1行増える  … 4行 → 5行
+  PASS  ★名簿は1行も変わらない
+  **FAIL**  ★入力が audit に残る（role=student）  … 0行
+  PASS  ★audit に健康記録の中身が入っていない
+
+--- ★生徒が records（その日の一覧）を叩くと拒否＝他人の体調は見えない ---
+  **FAIL**  forbidden/staffOnly で拒否  … {"error":"Unknown action"}
+  PASS  ★他人の体調・欠席理由が1つも返らない
+
+--- ★生徒とも職員とも判定できない形（kawata@…）---
+  **FAIL**  roster        → forbidden/unknownAccount  … {"error":"Unknown action"}
+  **FAIL**  records       → forbidden/unknownAccount  … {"error":"Unknown action"}
+  **FAIL**  allRoster     → forbidden/unknownAccount  … {"error":"Unknown action"}
+  **FAIL**  submit        → forbidden/unknownAccount  … {"success":true,"count":1}
+  **FAIL**  updateRoster  → forbidden/unknownAccount  … {"success":true}
+
+--- 職員のトークンなら5アクションが通る（★件数だけ見る）---
+  **FAIL**  TOK-STAFF roster（月）→ 1件  … {"error":"Unknown action"}
+  **FAIL**  TOK-STAFF records（2026-09-10）→ 2件
+  **FAIL**  TOK-STAFF allRoster → 2件
+  **FAIL**  TOK-STAFF2 roster（月）→ 1件  … {"error":"Unknown action"}
+  **FAIL**  TOK-STAFF2 records（2026-09-10）→ 2件
+  **FAIL**  TOK-STAFF2 allRoster → 2件
+  PASS  submit → 記録が1行増える  … {"success":true,"count":1} / 5行
+  **FAIL**  updateRoster → 名簿が見出し＋1件になる  … {"success":true} / 2行
+
+--- ★GET で書き込みを叩く（正しい職員トークン付き＝CSRFの形）---
+  **FAIL**  GET submit        → forbidden/postOnly  … {"error":"Unknown action"}
+  PASS  GET submit        → ★名簿・記録を1行も書き換えていない
+  **FAIL**  GET updateRoster  → forbidden/postOnly  … {"error":"Unknown action"}
+  PASS  GET updateRoster  → ★名簿・記録を1行も書き換えていない
+
+--- GET の読み取りも番人の後ろにあること（無認証）---
+  **FAIL**  GET roster        → unauthorized・氏名なし  … {"students":["架空太郎"]} 架空太郎
+  **FAIL**  GET records       → unauthorized・氏名なし  … {"records":[{"date":"2026-09-10","name":"架空太郎","condition":"良好","atten 架空太郎,架空花子,良好,不良,遅刻,架空の理由
+  **FAIL**  GET allRoster     → unauthorized・氏名なし  … {"roster":[{"name":"架空太郎","days":{"月":true,"火":false,"水":false,"木":fal 架空太郎,架空花子
+
+--- ★0件で名簿を上書きしようとする（職員トークン）---
+  送ったもの: {"action":"updateRoster","idToken":"TOK-STAFF","roster":[]}
+  返ったもの: {"success":true}
+  **FAIL**  ★refuseWipe で拒否  … {"success":true}
+  **FAIL**  ★既存の件数(prev:2)を返す  … {"success":true}
+  **FAIL**  ★名簿が1行も変わっていない  … 1行
+  **FAIL**  ★氏名の無い行だけ→ refuseWipe・名簿無傷  … {"error":"Cannot read properties of undefined (reading '月')"}
+  **FAIL**  ★配列でない→ badPayload・名簿無傷  … {"error":"roster.forEach is not a function"}
+  **FAIL**  confirmEmpty: true なら通る（見出しだけ残る）  … {"success":true}
+  **FAIL**  submit の日付が壊れている→ badPayload・記録無傷  … {"success":true,"count":0}
+
+--- 例外の中身（シート名など）を外に返さない ---
+  PASS  内部の事情が返らない  … {"error":"Unknown action"}
+  **FAIL**  bad request として返る  … {"error":"Unknown action"}
+  **FAIL**  本文が壊れていても落ちない  … (例外) Unexpected token 'こ', "これはJSONではない" is not valid JSON
+
+--- 操作の記録（audit）---
+  audit の行数: 0
+  **FAIL**  audit シートができる
+  **FAIL**  ★無認証は記録しない（外から行を増やせないように）  … 0行
+  **FAIL**  拒否の理由が残る（staffOnly / postOnly）
+  PASS  ★note に氏名・健康記録が入っていない
+  **FAIL**  role 列がある（staff / student）
+
+--- 自己診断 HC_番人_自己診断 ---
+  **FAIL**  自己診断がある  … ★この版には入っていません
+
+============================================================
+ 本命（番人あり）    : FAIL 0 件  → 0 でなければならない
+ 負の対照（番人なし）: FAIL 53 件  → 0 なら試験が壊れている
+============================================================
+
+=== 総合: PASS ===

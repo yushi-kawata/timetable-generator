@@ -1,0 +1,170 @@
+============================================================
+ A4-41 dxUrl の行き先の限定 実測  2026-09-10T04:51:40.528Z
+============================================================
+
+############ 本命：行き先を確認する版 （gas-script.本番_A4-41_番人入り_20260908.js） ############
+
+--- 1. 正しいURL（いつもの登校QR）は通る ---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOK-STUDENT","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":true,"code":200}
+  出ていった通信: get https://you-net-dx.jp/yushi/student/index.php  /  post https://you-net-dx.jp/yushi/student/pages/login.php  /  get https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3  /  post https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3
+  PASS  ★登校できる（今までどおり）  … {"ok":true,"code":200}
+  PASS  ★younetDX 以外へは1回も出ていない
+
+--- 1b. ★スキームとホストが大文字でも通る ---
+  PASS  https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3 いつもの形
+         返り: {"ok":true,"code":200}   younetDX以外への通信: 0回
+  PASS  HTTPS://YOU-NET-DX.JP/yushi/student/pages/attend.php?type=0    全部大文字のスキームとホスト
+         返り: {"ok":true,"code":200}   younetDX以外への通信: 0回
+  PASS  Https://You-Net-Dx.JP/yushi/student/pages/attend.php?type=0    混じり
+         返り: {"ok":true,"code":200}   younetDX以外への通信: 0回
+
+--- 1c. ★パスとクエリを小文字にしていないこと（原形のまま送る）---
+  送ったもの: https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf
+  younetDX へ実際に出たURL:
+    https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf
+    https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf
+  PASS  通る  … {"ok":true,"code":200}
+  PASS  ★パスとクエリが原形のまま（1文字も小文字にしていない）  … https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf / https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf
+  送ったもの: HTTPS://YOU-NET-DX.JP/yushi/student/pages/attend.php?TYPE=1&STUDIO_ID=3（TYPE=1 ＝下校）
+  younetDX へ送った中身: {"student_id":"777","type":"1","studio_id":"3","attend":"送信する"}
+  PASS  ★大文字の TYPE=1 を「下校」として読めている（既定の 0＝登校 に落ちない）  … type=1
+  PASS  ★大文字の STUDIO_ID=3 も読めている  … studio_id=3
+
+--- 2. ★通ってはいけないURL（cookie がどこにも出ないこと）---
+  PASS  https://evil.example/                    まったく別のサイト
+         返り: {"ok":false,"reason":"badDxUrl","msg":"bad dxUrl"}   younetDXへの通信: 0回
+  PASS  https://you-net-dx.jp.evil.example/      ★前方一致で騙す形
+         返り: {"ok":false,"reason":"badDxUrl","msg":"bad dxUrl"}   younetDXへの通信: 0回
+  PASS  https://evil.example/?x=you-net-dx.jp    ★文字列に含めて騙す形
+         返り: {"ok":false,"reason":"badDxUrl","msg":"bad dxUrl"}   younetDXへの通信: 0回
+  PASS  https://you-net-dx.jp@evil.example/      ★user@host で騙す形
+         返り: {"ok":false,"reason":"badDxUrl","msg":"bad dxUrl"}   younetDXへの通信: 0回
+  PASS  https://sub.you-net-dx.jp/x              サブドメイン（完全一致でない）
+         返り: {"ok":false,"reason":"badDxUrl","msg":"bad dxUrl"}   younetDXへの通信: 0回
+  PASS  http://you-net-dx.jp/x                   ★https でない（cookieが平文）
+         返り: {"ok":false,"reason":"badDxUrl","msg":"bad dxUrl"}   younetDXへの通信: 0回
+  PASS  HTTP://YOU-NET-DX.JP/x                   ★https でない（大文字でも拒否）
+         返り: {"ok":false,"reason":"badDxUrl","msg":"bad dxUrl"}   younetDXへの通信: 0回
+  PASS  //you-net-dx.jp/x                        スキームなし
+         返り: {"ok":false,"reason":"badDxUrl","msg":"bad dxUrl"}   younetDXへの通信: 0回
+  PASS  javascript:alert(1)                      javascript:
+         返り: {"ok":false,"reason":"badDxUrl","msg":"bad dxUrl"}   younetDXへの通信: 0回
+  PASS  (空)                                      空
+         返り: {"ok":false,"reason":"noDxUrl","msg":"no dxUrl"}   younetDXへの通信: 0回
+
+--- 3. ★許可ホストが他所へ転送してくる場合 ---
+  送ったもの: dxUrl=https://you-net-dx.jp/redirect.php?to=evil（先方が evil.example へ転送してくる）
+  返ったもの: {"ok":false,"reason":"badDxUrl","msg":"redirect blocked"}
+  出ていった通信: get https://you-net-dx.jp/yushi/student/index.php  /  post https://you-net-dx.jp/yushi/student/pages/login.php  /  get https://you-net-dx.jp/redirect.php?to=evil
+  PASS  ★転送先へ cookie を送っていない
+  PASS  ★止まって失敗を返す  … {"ok":false,"reason":"badDxUrl","msg":"redirect blocked"}
+
+--- 4. 転送が younetDX の中なら辿る（正常系を壊していないこと）---
+  返ったもの: {"ok":true,"code":200}
+  出ていった通信: get https://you-net-dx.jp/yushi/student/index.php  /  post https://you-net-dx.jp/yushi/student/pages/login.php  /  get https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3  /  get https://you-net-dx.jp/yushi/student/pages/attend2.php  /  post https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3  /  get https://you-net-dx.jp/yushi/student/pages/attend2.php
+  PASS  ★ルート相対の転送を辿れている  … https://you-net-dx.jp/yushi/student/index.php, https://you-net-dx.jp/yushi/student/pages/login.php, https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3, https://you-net-dx.jp/yushi/student/pages/attend2.php, https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3, https://you-net-dx.jp/yushi/student/pages/attend2.php
+  PASS  ★登校できる  … {"ok":true,"code":200}
+  PASS  younetDX 以外へは出ていない
+
+--- 5. 転送がぐるぐる回る場合（止まること）---
+  返ったもの: {"ok":false,"reason":"badDxUrl","msg":"redirect blocked"}   通信回数: 6回
+  PASS  ★無限に回らずに止まる  … {"ok":false,"reason":"badDxUrl","msg":"redirect blocked"}
+  PASS  ★通信回数が上限で打ち切られる  … 6回
+
+--- 6. 記録（audit）に攻撃者のURLをそのまま残さないこと ---
+  audit の中身: 2026-09-10T04:51:40.548Z|s26100004@yushi-kokusai.jp|dxCheckIn|ng|[student] badHost:evil.example|student
+  PASS  拒否が記録される  … 1行
+  PASS  ★URL全体（クエリつき）が残っていない  … [student] badHost:evil.example
+  PASS  ★SECRET のような中身が残っていない  … [student] badHost:evil.example
+  PASS  ★どこへ行こうとしたかは分かる（ホスト名）  … [student] badHost:evil.example
+
+
+============================================================
+ ★負の対照：行き先の確認を入れる前の版で同じ試験が FAIL すること
+ （ここが全部 PASS になるなら、試験は何も検査していない）
+============================================================
+
+############ 負の対照：行き先を確認しない版（dxUrl 素通し） （tmp_verify/control_a441_nohostcheck_20260909.js） ############
+
+--- 1. 正しいURL（いつもの登校QR）は通る ---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOK-STUDENT","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":true,"code":200}
+  出ていった通信: get https://you-net-dx.jp/yushi/student/index.php  /  post https://you-net-dx.jp/yushi/student/pages/login.php  /  get https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3  /  post https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3
+  PASS  ★登校できる（今までどおり）  … {"ok":true,"code":200}
+  PASS  ★younetDX 以外へは1回も出ていない
+
+--- 1b. ★スキームとホストが大文字でも通る ---
+  PASS  https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3 いつもの形
+         返り: {"ok":true,"code":200}   younetDX以外への通信: 0回
+  PASS  HTTPS://YOU-NET-DX.JP/yushi/student/pages/attend.php?type=0    全部大文字のスキームとホスト
+         返り: {"ok":true,"code":200}   younetDX以外への通信: 0回
+  PASS  Https://You-Net-Dx.JP/yushi/student/pages/attend.php?type=0    混じり
+         返り: {"ok":true,"code":200}   younetDX以外への通信: 0回
+
+--- 1c. ★パスとクエリを小文字にしていないこと（原形のまま送る）---
+  送ったもの: https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf
+  younetDX へ実際に出たURL:
+    https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf
+    https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf
+  PASS  通る  … {"ok":true,"code":200}
+  PASS  ★パスとクエリが原形のまま（1文字も小文字にしていない）  … https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf / https://you-net-dx.jp/yushi/Student/Pages/Attend.php?Type=1&Studio_ID=3&Token=AbCdEf
+  送ったもの: HTTPS://YOU-NET-DX.JP/yushi/student/pages/attend.php?TYPE=1&STUDIO_ID=3（TYPE=1 ＝下校）
+  younetDX へ送った中身: {"student_id":"777","type":"0","studio_id":"3","attend":"送信する"}
+  **FAIL**  ★大文字の TYPE=1 を「下校」として読めている（既定の 0＝登校 に落ちない）  … type=0
+  PASS  ★大文字の STUDIO_ID=3 も読めている  … studio_id=3
+
+--- 2. ★通ってはいけないURL（cookie がどこにも出ないこと）---
+  **FAIL**  https://evil.example/                    まったく別のサイト
+         返り: {"ok":true,"code":200}   younetDXへの通信: 4回   ★漏れ: https://evil.example/, https://evil.example/
+  **FAIL**  https://you-net-dx.jp.evil.example/      ★前方一致で騙す形
+         返り: {"ok":true,"code":200}   younetDXへの通信: 4回   ★漏れ: https://you-net-dx.jp.evil.example/, https://you-net-dx.jp.evil.example/
+  **FAIL**  https://evil.example/?x=you-net-dx.jp    ★文字列に含めて騙す形
+         返り: {"ok":true,"code":200}   younetDXへの通信: 4回   ★漏れ: https://evil.example/?x=you-net-dx.jp, https://evil.example/?x=you-net-dx.jp
+  **FAIL**  https://you-net-dx.jp@evil.example/      ★user@host で騙す形
+         返り: {"ok":true,"code":200}   younetDXへの通信: 4回   ★漏れ: https://you-net-dx.jp@evil.example/, https://you-net-dx.jp@evil.example/
+  **FAIL**  https://sub.you-net-dx.jp/x              サブドメイン（完全一致でない）
+         返り: {"ok":true,"code":200}   younetDXへの通信: 4回   ★漏れ: https://sub.you-net-dx.jp/x, https://sub.you-net-dx.jp/x
+  **FAIL**  http://you-net-dx.jp/x                   ★https でない（cookieが平文）
+         返り: {"ok":true,"code":200}   younetDXへの通信: 4回   ★漏れ: http://you-net-dx.jp/x, http://you-net-dx.jp/x
+  **FAIL**  HTTP://YOU-NET-DX.JP/x                   ★https でない（大文字でも拒否）
+         返り: {"ok":true,"code":200}   younetDXへの通信: 4回   ★漏れ: HTTP://YOU-NET-DX.JP/x, HTTP://YOU-NET-DX.JP/x
+  **FAIL**  //you-net-dx.jp/x                        スキームなし
+         返り: {"ok":true,"code":200}   younetDXへの通信: 4回   ★漏れ: //you-net-dx.jp/x, //you-net-dx.jp/x
+  **FAIL**  javascript:alert(1)                      javascript:
+         返り: {"ok":true,"code":200}   younetDXへの通信: 4回   ★漏れ: javascript:alert(1), javascript:alert(1)
+  PASS  (空)                                      空
+         返り: {"ok":false,"msg":"no dxUrl"}   younetDXへの通信: 0回
+
+--- 3. ★許可ホストが他所へ転送してくる場合 ---
+  送ったもの: dxUrl=https://you-net-dx.jp/redirect.php?to=evil（先方が evil.example へ転送してくる）
+  返ったもの: {"ok":true,"code":200}
+  出ていった通信: get https://you-net-dx.jp/yushi/student/index.php  /  post https://you-net-dx.jp/yushi/student/pages/login.php  /  get https://you-net-dx.jp/redirect.php?to=evil  /  get https://evil.example/steal  /  post https://you-net-dx.jp/redirect.php?to=evil  /  post https://evil.example/steal
+  **FAIL**  ★転送先へ cookie を送っていない  … https://evil.example/steal (cookie=PHPSESSID=SECRET-SESSION), https://evil.example/steal (cookie=PHPSESSID=SECRET-SESSION)
+  **FAIL**  ★止まって失敗を返す  … {"ok":true,"code":200}
+
+--- 4. 転送が younetDX の中なら辿る（正常系を壊していないこと）---
+  返ったもの: {"ok":true,"code":200}
+  出ていった通信: get https://you-net-dx.jp/yushi/student/index.php  /  post https://you-net-dx.jp/yushi/student/pages/login.php  /  get https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3  /  get https://you-net-dx.jp/yushi/student/pages/attend2.php  /  post https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3  /  post https://you-net-dx.jp/yushi/student/pages/attend2.php
+  PASS  ★ルート相対の転送を辿れている  … https://you-net-dx.jp/yushi/student/index.php, https://you-net-dx.jp/yushi/student/pages/login.php, https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3, https://you-net-dx.jp/yushi/student/pages/attend2.php, https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3, https://you-net-dx.jp/yushi/student/pages/attend2.php
+  PASS  ★登校できる  … {"ok":true,"code":200}
+  PASS  younetDX 以外へは出ていない
+
+--- 5. 転送がぐるぐる回る場合（止まること）---
+  返ったもの: {"ok":false,"msg":"no student_id"}   通信回数: 8回
+  PASS  ★無限に回らずに止まる  … {"ok":false,"msg":"no student_id"}
+  PASS  ★通信回数が上限で打ち切られる  … 8回
+
+--- 6. 記録（audit）に攻撃者のURLをそのまま残さないこと ---
+  audit の中身: 2026-09-10T04:51:40.559Z|s26100004@yushi-kokusai.jp|dxCheckIn|ok|[student] code=200|student
+  PASS  拒否が記録される  … 1行
+  PASS  ★URL全体（クエリつき）が残っていない  … [student] code=200
+  PASS  ★SECRET のような中身が残っていない  … [student] code=200
+  **FAIL**  ★どこへ行こうとしたかは分かる（ホスト名）  … [student] code=200
+
+============================================================
+ 本命（確認あり）      : FAIL 0 件  → 0 でなければならない
+ 負の対照（確認なし）  : FAIL 13 件  → 0 なら試験が壊れている
+============================================================
+
+=== 総合: PASS ===

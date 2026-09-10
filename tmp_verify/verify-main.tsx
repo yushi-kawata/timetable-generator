@@ -102,9 +102,9 @@ const root = w.__root || (w.__root = createRoot(container));
     const cases: [string, string | null][] = [
       ['s26100012@yushi-kokusai.jp', 'student'],
       ['a00000001@yushi-kokusai.jp', 'student'],
-      ['s-kawata@yushi-kokusai.jp', 'staff'],
+      ['s-hisho09@yushi-kokusai.jp', 'staff'],
       ['sa-sakai@yushi-kokusai.jp', 'staff'],
-      ['s-ohno@yushi-kokusai.jp', 'staff'],
+      ['s-hisho10@yushi-kokusai.jp', 'staff'],
       ['S-Kawata@Yushi-Kokusai.JP', 'staff'],
       ['  s26100012@yushi-kokusai.jp  ', 'student'],
       ['s2610001@yushi-kokusai.jp', null],
@@ -114,7 +114,7 @@ const root = w.__root || (w.__root = createRoot(container));
       ['-kawata@yushi-kokusai.jp', null],
       ['kawata-@yushi-kokusai.jp', null],
       ['s-kawata@gmail.com', null],
-      ['s-kawata@yushi-kokusai.jp.evil@x.com', null],
+      ['s-hisho09@yushi-kokusai.jp.evil@x.com', null],
       ['s26100012', null],
     ];
     const rows = cases.map(([e, want]) => {

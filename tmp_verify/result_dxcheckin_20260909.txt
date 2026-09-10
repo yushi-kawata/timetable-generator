@@ -1,0 +1,106 @@
+============================================================
+ A4-41 dxCheckIn なりすまし塞ぎの実測  2026-09-10T04:51:40.627Z
+============================================================
+
+############ 本命：塞いだ版 （gas-script.本番_A4-41_番人入り_20260908.js） ############
+
+--- ★なりすまし: 生徒A が本文に 生徒B のメールを書いて登校を叩く ---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOKEN-A","email":"s26100001@yushi-kokusai.jp","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":true,"code":200}
+  younetDX に送られた資格情報: {"login_id":"S26100004@Yushi-Kokusai.JP","password":"pw-AAAAA"}
+  PASS  ★生徒B のパスワードが使われていない  … pw-AAAAA
+  PASS  ★生徒B のログインIDが使われていない  … S26100004@Yushi-Kokusai.JP
+  PASS  使われたのは 生徒A 自身の資格情報  … {"login_id":"S26100004@Yushi-Kokusai.JP","password":"pw-AAAAA"}
+
+--- ★なりすまし（逆向き）: 生徒B が 生徒A のメールを書く ---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOKEN-B","email":"  S26100004@Yushi-Kokusai.JP  ","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":true,"code":200}
+  younetDX に送られた資格情報: {"login_id":"s26100001@yushi-kokusai.jp","password":"pw-BBBBB"}
+  PASS  ★生徒A の資格情報が使われていない  … pw-BBBBB
+  PASS  使われたのは 生徒B 自身の資格情報  … {"login_id":"s26100001@yushi-kokusai.jp","password":"pw-BBBBB"}
+
+--- 本人が普通に登校する（本文にメールを書かない）---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOKEN-A","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":true,"code":200}
+  younetDX に送られた資格情報: {"login_id":"S26100004@Yushi-Kokusai.JP","password":"pw-AAAAA"}
+  PASS  ★本文にメールが無くても本人として登校できる  … {"ok":true,"code":200}
+  PASS  自分の資格情報で younetDX にログインしている  … {"login_id":"S26100004@Yushi-Kokusai.JP","password":"pw-AAAAA"}
+  PASS  ★シートの平文パスワードを読む経路は生きている（消すとQRが死ぬ）
+
+--- 名簿に居ない人（職員）が登校を叩く ---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOKEN-STAFF","email":"s26100001@yushi-kokusai.jp","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":false,"reason":"notEnrolled","msg":"student not found"}
+  younetDX への通信: 0回
+  PASS  reason:notEnrolled が返る（getMe と同じ）  … {"ok":false,"reason":"notEnrolled","msg":"student not found"}
+  PASS  ★younetDX に1回も触っていない  … 0回
+
+--- 番人（トークンなし／デタラメ）---
+  PASS  トークンなし → 拒否  … {"error":"unauthorized","reason":"signin"}
+  PASS  トークンなし → younetDX に1回も触らない
+  PASS  デタラメなトークン → 拒否  … {"error":"unauthorized","reason":"signin"}
+  PASS  デタラメなトークン → younetDX に1回も触らない
+
+--- 操作の記録（audit）---
+  audit の中身: 2026-09-10T04:51:40.638Z|s26100004@yushi-kokusai.jp|dxCheckIn|ok|[student] code=200|student  /  2026-09-10T04:51:40.638Z|s-hisho09@yushi-kokusai.jp|dxCheckIn|ng|[staff] notEnrolled（dx_email に一致なし／名簿2件）|staff
+  PASS  成功・失敗の両方が記録される  … 2行
+  PASS  ★note にメールアドレスが入っていない  … [student] code=200 [staff] notEnrolled（dx_email に一致なし／名簿2件）
+  PASS  ★note に生徒の氏名が入っていない  … [student] code=200 [staff] notEnrolled（dx_email に一致なし／名簿2件）
+  PASS  ★note に平文パスワードが入っていない  … [student] code=200 [staff] notEnrolled（dx_email に一致なし／名簿2件）
+
+
+============================================================
+ ★負の対照：今日の修正前（git HEAD）で同じ試験が FAIL すること
+ （ここが全部 PASS になるなら、試験は何も検査していない）
+============================================================
+
+############ 負の対照：修正前（body.email を信じていた版） （tmp_verify/control_a441_before_20260909.js） ############
+
+--- ★なりすまし: 生徒A が本文に 生徒B のメールを書いて登校を叩く ---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOKEN-A","email":"s26100001@yushi-kokusai.jp","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":true,"code":200}
+  younetDX に送られた資格情報: {"login_id":"s26100001@yushi-kokusai.jp","password":"pw-BBBBB"}
+  **FAIL**  ★生徒B のパスワードが使われていない  … pw-BBBBB
+  **FAIL**  ★生徒B のログインIDが使われていない  … s26100001@yushi-kokusai.jp
+  **FAIL**  使われたのは 生徒A 自身の資格情報  … {"login_id":"s26100001@yushi-kokusai.jp","password":"pw-BBBBB"}
+
+--- ★なりすまし（逆向き）: 生徒B が 生徒A のメールを書く ---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOKEN-B","email":"  S26100004@Yushi-Kokusai.JP  ","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":true,"code":200}
+  younetDX に送られた資格情報: {"login_id":"  S26100004@Yushi-Kokusai.JP  ","password":"pw-AAAAA"}
+  **FAIL**  ★生徒A の資格情報が使われていない  … pw-AAAAA
+  **FAIL**  使われたのは 生徒B 自身の資格情報  … {"login_id":"  S26100004@Yushi-Kokusai.JP  ","password":"pw-AAAAA"}
+
+--- 本人が普通に登校する（本文にメールを書かない）---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOKEN-A","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":false,"msg":"student not found"}
+  younetDX に送られた資格情報: (1回も送っていない)
+  **FAIL**  ★本文にメールが無くても本人として登校できる  … {"ok":false,"msg":"student not found"}
+  **FAIL**  自分の資格情報で younetDX にログインしている  … (なし)
+  **FAIL**  ★シートの平文パスワードを読む経路は生きている（消すとQRが死ぬ）
+
+--- 名簿に居ない人（職員）が登校を叩く ---
+  送ったもの: {"action":"dxCheckIn","idToken":"TOKEN-STAFF","email":"s26100001@yushi-kokusai.jp","dxUrl":"https://you-net-dx.jp/yushi/student/pages/attend.php?type=0&studio_id=3"}
+  返ったもの: {"ok":true,"code":200}
+  younetDX への通信: 4回
+  **FAIL**  reason:notEnrolled が返る（getMe と同じ）  … {"ok":true,"code":200}
+  **FAIL**  ★younetDX に1回も触っていない  … 4回
+
+--- 番人（トークンなし／デタラメ）---
+  PASS  トークンなし → 拒否  … {"error":"unauthorized","reason":"signin"}
+  PASS  トークンなし → younetDX に1回も触らない
+  PASS  デタラメなトークン → 拒否  … {"error":"unauthorized","reason":"signin"}
+  PASS  デタラメなトークン → younetDX に1回も触らない
+
+--- 操作の記録（audit）---
+  audit の中身: (なし)
+  **FAIL**  成功・失敗の両方が記録される  … 0行
+  PASS  ★note にメールアドレスが入っていない
+  PASS  ★note に生徒の氏名が入っていない
+  PASS  ★note に平文パスワードが入っていない
+
+============================================================
+ 本命（塞いだ版）      : FAIL 0 件  → 0 でなければならない
+ 負の対照（修正前）    : FAIL 11 件  → 0 なら試験が壊れている
+============================================================
+
+=== 総合: PASS ===
