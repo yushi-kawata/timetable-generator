@@ -8,6 +8,16 @@ import '../src/index.css';
 const params = new URLSearchParams(location.search);
 const email = params.get('email') || 's26100012@yushi-kokusai.jp';
 const kase = params.get('case') || 'ok';
+// ★2026-09-11（台帳 A4-86）連携の描画確認用。既定は今までどおり（何も変わらない）
+//   ?dx=ok|notEnrolled|noPassword|dxLoginFailed|noDxUrl|badDxUrl|http500
+//   ?confirm=miss … getAttendance が空を返す＝保存の確認に失敗する状態を作る
+//   ?qr=on        … QRの窓口が行き先を返している状態を作る
+const dxCase = params.get('dx') || 'ok';
+const confirmCase = params.get('confirm') || 'hit';
+const qrCase = params.get('qr') || 'off';
+//   ?start=fresh  … まだ登校していない状態から始める（既定は今までどおり登校済み）
+const startCase = params.get('start') || 'checkedIn';
+let hasCheckedIn = startCase !== 'fresh';
 
 const NAME = '山田 太郎';
 const d = new Date();
@@ -31,7 +41,17 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   if (!url.includes('script.google.com')) return origFetch(input as RequestInfo, init);
 
   // QR（別プロジェクトの窓口。GET）
-  if (url.includes('action=api')) { calls.push('qr'); return J({}); }
+  if (url.includes('action=api')) {
+    calls.push('qr');
+    if (qrCase !== 'on') return J({});
+    const dxUrl = 'https://you-net-dx.jp/yushi/student/pages/entry_commute.php?type=0&studio_id=3&todate=DUMMY';
+    return J({
+      campus: '福岡', date: today,
+      tokou_qr: 'data:image/png;base64,DUMMY', gekou_qr: 'data:image/png;base64,DUMMY',
+      tokou_url: dxUrl, gekou_url: dxUrl.replace('type=0', 'type=1'),
+      updated_at: today + ' 08:30:00',
+    });
+  }
 
   const body = JSON.parse(String(init?.body || '{}'));
   const action = String(body.action || '');
@@ -58,7 +78,25 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     { date: today, name: '鈴木 一郎', grade: '1年', checkinTime: '09:40', checkoutTime: '' },
   ];
   const MINE = { date: today, name: NAME, grade: '2年', checkinTime: '09:12', checkoutTime: '' };
-  if (action === 'getAttendance') return J(isStudentEmail ? [MINE] : [MINE, ...OTHERS]);
+  // ★confirm=miss ＝ 裏側が本人の行を返してこない状態（日付の型違い・氏名の食い違い等）。
+  //   これが台帳 A4-86 で連携が止まっていた条件。
+  if (action === 'checkIn' || action === 'checkOut') {
+    hasCheckedIn = true;
+    return J({ ok: true });
+  }
+  if (action === 'getAttendance') {
+    if (confirmCase === 'miss') return J([]);
+    const mine = hasCheckedIn ? [MINE] : [];
+    return J(isStudentEmail ? mine : [...mine, ...OTHERS]);
+  }
+
+  // ★連携の返事。本番のGASが返す形に合わせる（reason / code つき）
+  if (action === 'dxCheckIn') {
+    if (dxCase === 'ok') return J({ ok: true, code: 200 });
+    if (dxCase === 'http500') return new Response('boom', { status: 500 });
+    if (dxCase === 'code') return J({ ok: false, code: 404 });
+    return J({ ok: false, reason: dxCase, msg: dxCase });
+  }
 
   const sel = { 2: 'A教室（2年）' };
   const MY_P2 = { week: weekKey, name: NAME,

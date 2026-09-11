@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../stores/useMasterStore';
+import type { DxFailReason } from '../../stores/dxResult';
 import { nowTime } from './studentDate';
+import { recordFlow, verifyFlow } from './attendanceFlow';
+import type { Op, FlowReq } from './attendanceFlow';
+import { DX_REASON_TEXT, DX_RETRYABLE } from './dxMessages';
 
 /* ============================================================================
    出欠（生徒の記録票の中で、深緑を塗る唯一の場所）
@@ -14,12 +18,22 @@ import { nowTime } from './studentDate';
    ・連携の状態は「いま押した分」しか分からない（取りに行く窓口が無い）。
      分からないときに「連携済み」とは書かない。
    ・★裏側の dxCheckIn が返す {ok:true} は「HTTPが 2xx〜3xx で返ってきた」だけの意味で、
-     向こうに出欠が付いたことの証拠ではない（302 も成功に数えている／名簿の
-     dx_password が空の生徒は登録されていなくても ok が返る＝既知の穴・未修正）。
+     向こうに出欠が付いたことの証拠ではない（302 も成功に数えている）。
      だから ok のときも「送信しました」までしか書かない。「反映」「登録されました」
      「完了」のように、向こう側の結果を保証する言い方をしないこと。
    ・記録の結果は role="status" の領域に常設し、文言だけを差し替える。
    ・「下校」は赤にしない。未記録を警告色にしない。
+
+   ★2026-09-11（台帳 A4-86）ここで直したこと
+     1. 保存の確認（confirmSaved）に失敗しても、連携は試す。
+        以前は確認に失敗すると return していたため、【連携が1度も呼ばれなかった】。
+        「保存できたか確かめられたか」と「younetDX に登録すべきか」は別の話。
+        ★ただし校内保存そのものが失敗したときは連携しない（attendanceFlow を見ること）。
+     2. 「記録を確認する」から連携を再試行できるようにした（以前は経路が無かった）。
+     3. 失敗の理由を捨てず、理由ごとに【次に何をすればよいか】を書く。
+     4. QRの行き先が取れていなくても、空のまま裏側へ送る。裏側が noDxUrl として
+        audit シートに1行残すので、「画面までは動いたが行き先が無かった」と後から分かる。
+        ★空のときに手前で止めると、何も起きなかったのと区別が付かない（これが A4-86）。
    ============================================================================ */
 
 /** これを過ぎても裏側から返事が無ければ「成否不明」に倒す */
@@ -30,26 +44,17 @@ const SLOW_MS = 12000;
  */
 const CHECKOUT_APPEAR_MS = 5000;
 
-type Op = 'in' | 'out';
-
-type Req =
-  | { kind: 'idle' }
-  | { kind: 'sending'; op: Op }
-  | { kind: 'verifying'; op: Op }
-  /** 裏側が受け付けなかったことが確定している */
-  | { kind: 'failed'; op: Op }
-  /** 返事が無い・通信が切れた＝保存できたかどうか分からない */
-  | { kind: 'unknown'; op: Op; retried: boolean };
+/** 記録の状態。★中身は attendanceFlow.ts と同じもの（順番の試験のために外に出した） */
+type Req = FlowReq;
 
 /** 教務システム（younetDX）連携。校内記録とは別に持つ */
 type Dx =
   | { kind: 'none' }
-  | { kind: 'sending' }
+  | { kind: 'sending'; op: Op }
   /** ★送信が通っただけ。向こうに反映されたかどうかは、この画面では分からない */
-  | { kind: 'ok' }
-  | { kind: 'failed' }
-  /** 連携先が分からない（QRの窓口が取れない／名簿に dx_email が無い） */
-  | { kind: 'unavailable' };
+  | { kind: 'ok'; op: Op }
+  /** 送れなかった。reason で次の一手を出し分ける */
+  | { kind: 'failed'; op: Op; reason: DxFailReason; code?: number };
 
 type Props = {
   studentName: string;
@@ -78,6 +83,13 @@ export default function AttendancePanel({
   const [dx, setDx] = useState<Dx>({ kind: 'none' });
   /** 登校の直後だけ false。下校ボタンを同じ場所へ即座に出さないため */
   const [checkoutVisible, setCheckoutVisible] = useState(true);
+
+  /**
+   * いまの連携状態を、await をまたいでも読めるように控えておく。
+   * ★state だけだと、待っている間の値が古いまま残る（二重送信の判定を誤る）。
+   */
+  const dxRef = useRef<Dx>({ kind: 'none' });
+  const applyDx = (next: Dx) => { dxRef.current = next; setDx(next); };
 
   /** 押すたびに増やす。古い返事で新しい表示を上書きしないための番号 */
   const seqRef = useRef(0);
@@ -109,64 +121,67 @@ export default function AttendancePanel({
     return op === 'in' ? !!rec : !!rec?.checkoutTime;
   };
 
-  /** 教務システムへの反映。★校内記録の成否とは切り離す */
+  /**
+   * 教務システムへの送信。★校内記録の成否とは切り離す。
+   * ★QRの行き先が空でも送る（裏側が noDxUrl として audit に1行残す）。
+   *   ここで手前止めすると「送っていない」と「送って断られた」の区別が
+   *   どこにも残らない。それが台帳 A4-86 で10日近く分からなかった理由。
+   */
   const runDx = async (op: Op) => {
-    const url = op === 'in' ? qrData?.tokou_url : qrData?.gekou_url;
-    if (!url || !dxEmail) { setDx({ kind: 'unavailable' }); return; }
-    setDx({ kind: 'sending' });
-    const ok = await dxCheckIn(dxEmail, url);
-    setDx({ kind: ok ? 'ok' : 'failed' });
+    const url = (op === 'in' ? qrData?.tokou_url : qrData?.gekou_url) || '';
+    applyDx({ kind: 'sending', op });
+    const res = await dxCheckIn(dxEmail, url);
+    applyDx(res.ok
+      ? { kind: 'ok', op }
+      : { kind: 'failed', op, reason: res.reason, code: res.code });
   };
 
   const record = async (op: Op) => {
     if (req.kind === 'sending' || req.kind === 'verifying') return;
     const seq = ++seqRef.current;
-    setReq({ kind: 'sending', op });
-    setDx({ kind: 'none' });
+    applyDx({ kind: 'none' });
 
     // 返事が返らないまま時間が過ぎたら「成否不明」にする（勝手に失敗と書かない）
     const slow = later(() => {
       if (seqRef.current === seq) setReq({ kind: 'unknown', op, retried: false });
     }, SLOW_MS);
 
-    const saved = op === 'in'
-      ? await checkIn(studentName, grade, today, nowTime())
-      : await checkOut(studentName, today, nowTime());
-    clearTimeout(slow);
-    if (seqRef.current !== seq) return;
-
-    if (!saved) {
+    await recordFlow(op, {
+      save: o => (o === 'in'
+        ? checkIn(studentName, grade, today, nowTime())
+        : checkOut(studentName, today, nowTime())),
       // 通信の失敗は「保存できたか分からない」。権限・ログインの拒否は「保存されていない」が確定
-      const kind = useAppStore.getState().gasErrorKind;
-      setReq(kind === 'forbidden' || kind === 'signin'
-        ? { kind: 'failed', op }
-        : { kind: 'unknown', op, retried: false });
-      return;
-    }
-
-    setReq({ kind: 'verifying', op });
-    const ok = await confirmSaved(op);
-    if (seqRef.current !== seq) return;
-    if (!ok) { setReq({ kind: 'unknown', op, retried: false }); return; }
-
-    setReq({ kind: 'idle' });
-    // ボタンが消えるので、フォーカスを記録結果の見出しへ引き継ぐ
-    later(() => resultRef.current?.focus(), 0);
-    if (op === 'in') {
-      setCheckoutVisible(false);
-      later(() => setCheckoutVisible(true), CHECKOUT_APPEAR_MS);
-    }
-    void runDx(op);
+      saveFailureKind: () => useAppStore.getState().gasErrorKind,
+      confirmSaved,
+      runDx,
+      isCurrent: () => seqRef.current === seq,
+      setReq,
+      onSaveSettled: () => clearTimeout(slow),
+      onConfirmed: o => {
+        // ボタンが消えるので、フォーカスを記録結果の見出しへ引き継ぐ
+        later(() => resultRef.current?.focus(), 0);
+        if (o === 'in') {
+          setCheckoutVisible(false);
+          later(() => setCheckoutVisible(true), CHECKOUT_APPEAR_MS);
+        }
+      },
+    });
   };
 
-  /** 「記録を確認する」。押しても新しい記録は作らない（読むだけ） */
+  /**
+   * 「記録を確認する」。押しても新しい校内記録は作らない（読むだけ）。
+   * ★記録が残っていることを確かめられたときだけ、連携を試す＝再試行の経路。
+   */
   const verify = async (op: Op) => {
     const seq = ++seqRef.current;
-    setReq({ kind: 'verifying', op });
-    const ok = await confirmSaved(op);
-    if (seqRef.current !== seq) return;
-    setReq(ok ? { kind: 'idle' } : { kind: 'unknown', op, retried: true });
-    if (ok) later(() => resultRef.current?.focus(), 0);
+    await verifyFlow(op, {
+      confirmSaved,
+      runDx,
+      dxAlreadySent: () => dxRef.current.kind === 'ok' || dxRef.current.kind === 'sending',
+      isCurrent: () => seqRef.current === seq,
+      setReq,
+      onConfirmed: () => later(() => resultRef.current?.focus(), 0),
+    });
   };
 
   // ── 記録結果の領域（role="status" で常設。文言だけ差し替える）──────────
@@ -205,9 +220,13 @@ export default function AttendancePanel({
       </div>
 
       {/* 教務システム連携。★校内記録と混ぜない・混同させない */}
-      <p aria-live="polite" className="mt-3 text-[0.8125rem] leading-5">
-        {dxLine(dx)}
-      </p>
+      <div aria-live="polite" className="mt-3 text-[0.8125rem] leading-5">
+        <DxLine
+          dx={dx}
+          schoolConfirmed={req.kind === 'idle' && (checkedIn || checkedOut)}
+          onRetry={op => { void runDx(op); }}
+        />
+      </div>
 
       <div className="mt-3">
         <AttendanceAction
@@ -324,7 +343,18 @@ function buildResult(a: {
   };
 }
 
-function dxLine(dx: Dx) {
+/* ── 連携が失敗したときの一言は dxMessages.ts にまとめてある ────────────
+   ★文言そのものを試験するため、画面から切り離してある（台帳 A4-86）。
+   ・「登校のやり直しは不要です」は、校内の記録が確認できているときだけ足す。
+     確認できていないのに書くと、上の枠の「確認してください」と食い違う。
+   ──────────────────────────────────────────────────────────────── */
+
+function DxLine({ dx, schoolConfirmed, onRetry }: {
+  dx: Dx;
+  /** 校内の記録が「残っている」ことを確認できているか */
+  schoolConfirmed: boolean;
+  onRetry: (op: Op) => void;
+}) {
   // ★ここで言ってよいのは「送った」までで、「反映された」ではない。
   //   反映を確かめる窓口が無い以上、結果を保証する言葉を書かないこと。
   if (dx.kind === 'none') return null;
@@ -339,19 +369,22 @@ function dxLine(dx: Dx) {
       </span>
     );
   }
-  if (dx.kind === 'failed') {
-    return (
-      <span className="text-[var(--warning)]">
-        教務システム（younetDX）への反映は確認できませんでした。
-        <span className="text-[var(--ink2)]">
-          {' '}学校の記録はできています。登校のやり直しは不要です。先生にお伝えください。
-        </span>
-      </span>
-    );
-  }
   return (
-    <span className="text-[var(--ink2)]">
-      教務システム（younetDX）への反映は、この画面では確認できません。
+    <span className="text-[var(--warning)]">
+      教務システム（younetDX）へ送信できませんでした。
+      <span className="text-[var(--ink2)]">
+        {' '}{DX_REASON_TEXT[dx.reason]}
+        {schoolConfirmed ? ' 学校の記録はできています。登校のやり直しは不要です。' : ''}
+      </span>
+      {DX_RETRYABLE.indexOf(dx.reason) !== -1 && (
+        <button
+          type="button"
+          onClick={() => onRetry(dx.op)}
+          className="block mt-2 text-[0.875rem] leading-5 text-[var(--accent)] underline underline-offset-2 font-bold py-2"
+        >
+          教務システムへの送信をもう一度試す
+        </button>
+      )}
     </span>
   );
 }

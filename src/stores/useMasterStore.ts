@@ -4,6 +4,9 @@ import type { TimetableTemplate, StudentRecord, Student, AttendanceRecord, Perio
 import { DEFAULT_TT } from '../types/master';
 import { auth, isAllowedDomain } from '../firebase';
 import { classifyRole } from '../lib/role';
+// ★連携の結果（成否＋理由）は dxResult.ts にまとめてある（台帳 A4-86）
+import { toDxResult } from './dxResult';
+import type { DxCheckInResult } from './dxResult';
 
 // GAS側は "course" カラム、フロント側は "classroom" フィールド
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -264,7 +267,8 @@ interface AppState {
 
   /** ログイン中の Google アカウントが名簿の誰なのかを裏側に聞く。引数は idToken だけ */
   getMe: () => Promise<GetMeResult>;
-  dxCheckIn: (email: string, dxUrl: string) => Promise<boolean>;
+  /** ★戻り値は成否だけでなく理由も持つ（台帳 A4-86）。dxUrl が空でも送る */
+  dxCheckIn: (email: string, dxUrl: string) => Promise<DxCheckInResult>;
 
   // レガシー互換（いまの画面からは呼ばれていない。呼ばれても番人を通る）
   addRecord: (r: Omit<StudentRecord, 'id'>) => Promise<void>;
@@ -516,9 +520,27 @@ export const useAppStore = create<AppState>()(
         return { ok: false, reason: 'network' };
       },
 
-      dxCheckIn: async (email: string, dxUrl: string): Promise<boolean> => {
-        const res = await gasCall<{ ok?: boolean }>('dxCheckIn', { email, dxUrl });
-        return res.ok && res.data?.ok === true;
+      // ★2026-09-11（台帳 A4-86）: 失敗の理由を捨てない。
+      //   ・裏側が付けてくる reason（noPassword / dxLoginFailed / notEnrolled /
+      //     noDxUrl / badDxUrl）はそのまま持ち帰る
+      //   ・理由が無く code だけのときは 'unknown' ＋ code を持ち帰る
+      //   ・通信・権限・ログイン切れも、画面が出し分けられるよう理由にする
+      //   ★dxUrl が空でも、ここで手前止めしないこと。空のまま送ると裏側が
+      //     noDxUrl として audit シートに1行残す＝「画面までは動いたが
+      //     QRの行き先が無かった」ことが後から分かる（younetDX には触らない）。
+      dxCheckIn: async (email: string, dxUrl: string): Promise<DxCheckInResult> => {
+        const res = await gasCall<{ ok?: boolean; reason?: unknown; code?: unknown }>(
+          'dxCheckIn', { email, dxUrl },
+        );
+        if (!res.ok) {
+          return {
+            ok: false,
+            reason: res.failure === 'signin' ? 'signin'
+              : res.failure === 'forbidden' ? 'forbidden'
+              : 'network',
+          };
+        }
+        return toDxResult(res.data);
       },
 
       // ── レガシー互換 ──────────────────────────────────────────────
