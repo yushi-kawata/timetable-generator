@@ -81,6 +81,10 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   // ★confirm=miss ＝ 裏側が本人の行を返してこない状態（日付の型違い・氏名の食い違い等）。
   //   これが台帳 A4-86 で連携が止まっていた条件。
   if (action === 'checkIn' || action === 'checkOut') {
+    // ★checkout=norow ＝ 裏側が「その日の登校の行が無い」と返す状態（1文字も書いていない）
+    if (action === 'checkOut' && params.get('checkout') === 'norow') {
+      return J({ ok: false, message: 'no checkin record' });
+    }
     hasCheckedIn = true;
     return J({ ok: true });
   }

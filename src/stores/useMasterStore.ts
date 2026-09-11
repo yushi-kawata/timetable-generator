@@ -460,9 +460,13 @@ export const useAppStore = create<AppState>()(
         return { ok: true, needsWipeConfirm: false, message: '保存しました' };
       },
 
+      // ★2026-09-11（台帳 A4-86）: res.ok（通信が通った）だけで「書けた」と
+      //   言わないこと。裏側は本文に {ok:false} を入れて返すことがある。
+      //   ここを見落とすと、書けていないのに書けた扱いになり、
+      //   younetDX にだけ登録される（逆向きの事故）。
       checkIn: async (name, grade, date, time) => {
         const res = await gasCall<{ ok?: boolean }>('checkIn', { name, grade, date, time });
-        if (!res.ok) return false;
+        if (!res.ok || res.data?.ok === false) return false;
         // ★裏側に通ってから画面に出す。先に出すと、拒否されても「登校済み」に見える
         set((s) => {
           const existing = s.attendance.find(a => a.date === date && a.name === name);
@@ -474,9 +478,12 @@ export const useAppStore = create<AppState>()(
         return true;
       },
 
+      // ★2026-09-11（台帳 A4-86）: 裏側は、その日の登校の行が見つからないと
+      //   {ok:false, message:'no checkin record'} を返す＝1文字も書いていない。
+      //   ここで true を返すと「下校を記録した」ことにしてしまう。
       checkOut: async (name, date, time) => {
         const res = await gasCall<{ ok?: boolean }>('checkOut', { name, date, time });
-        if (!res.ok) return false;
+        if (!res.ok || res.data?.ok === false) return false;
         set((s) => ({
           attendance: s.attendance.map(a =>
             a.date === date && a.name === name ? { ...a, checkoutTime: time } : a
