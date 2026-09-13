@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { loadTs } from './_load-ts.mjs';
 
 const { toDxResult, normalizeDxReason } = await loadTs('src/stores/dxResult.ts');
-const { DX_REASON_TEXT, DX_RETRYABLE, DX_BANNED_WORDS } =
+const { DX_REASON_TEXT, DX_RETRYABLE, DX_BANNED_WORDS, DX_SKIP_TEXT } =
   await loadTs('src/components/student/dxMessages.ts');
 
 /** 裏側が返しうる理由。★増えたらここも増やすこと */
@@ -90,5 +90,36 @@ test('生徒が押しても直らないものに、再試行ボタンを出さ�
 test('押し直して直る見込みのあるものには、再試行ボタンを出す', () => {
   for (const r of ['network', 'noDxUrl', 'unknown']) {
     assert.ok(DX_RETRYABLE.indexOf(r) !== -1, `${r} には再試行を出す`);
+  }
+});
+
+// ── 連携を「見送った」ときの文言 ────────────────────────────────────
+//   ★送れなかった（failed）と、そもそも送っていない（skipped）は別物。
+//     ここを同じ言い方にすると、台帳 A4-86 と同じ「何も起きなかったのと
+//     区別が付かない」状態に戻る。
+const ALL_SKIPS = ['saveFailed', 'saveUnknown', 'notConfirmed'];
+
+test('見送りの理由すべてに文言がある', () => {
+  assert.deepEqual(Object.keys(DX_SKIP_TEXT).sort(), [...ALL_SKIPS].sort());
+  for (const r of ALL_SKIPS) {
+    assert.ok(DX_SKIP_TEXT[r] && DX_SKIP_TEXT[r].length > 0, `${r} の文言が空`);
+  }
+});
+
+test('見送りの文言にも、次にやることが書いてある', () => {
+  for (const r of ALL_SKIPS) {
+    const t = DX_SKIP_TEXT[r];
+    assert.ok(/先生|もう一度|ログイン/.test(t), `${r}「${t}」に次の一手が無い`);
+  }
+});
+
+test('見送りの文言は「送っていない」と言い切る（送ったように読ませない）', () => {
+  for (const r of ALL_SKIPS) {
+    const t = DX_SKIP_TEXT[r];
+    assert.ok(t.indexOf('送っていません') !== -1,
+      `${r}「${t}」が、送っていないことを言い切っていない`);
+    for (const banned of DX_BANNED_WORDS) {
+      assert.ok(t.indexOf(banned) === -1, `${r} の文言に「${banned}」が入っている`);
+    }
   }
 });
