@@ -3,6 +3,7 @@ import { useAppStore } from '../../stores/useMasterStore';
 import type { DxFailReason } from '../../stores/dxResult';
 import { nowTime } from './studentDate';
 import { recordFlow, verifyFlow } from './attendanceFlow';
+import { findAttendance } from '../../lib/attendanceMatch';
 import type { Op, FlowReq } from './attendanceFlow';
 import { DX_REASON_TEXT, DX_RETRYABLE } from './dxMessages';
 
@@ -111,13 +112,22 @@ export default function AttendancePanel({
   const checkedIn = !!checkinTime;
   const checkedOut = !!checkoutTime;
 
-  /** 記録できたかを、裏側から取り直して確かめる */
+  /**
+   * 記録できたかを、裏側から取り直して確かめる。
+   * ★2026-09-14（台帳 A4-95）ここで直したこと
+   *   1. 取り直せたかは fetchAttendance の戻り値で見る。
+   *      以前は画面の帯（gasError）で代用していたが、帯は【別の失敗】でも立つ。
+   *      関係のない失敗のせいで「確認できませんでした」になっていた。
+   *   2. 日付は === で比べない。スプレッドシートの日付は日付型で入るため、
+   *      "2026-09-13T15:00:00.000Z"（＝日本時間 9/14 0時）のような形で届きうる。
+   *      findAttendance が暦日にそろえてから比べる。
+   *   ★younetDX には記録できているのに画面が「確認できません」と出ていたのは、
+   *     この2つのどちらか（あるいは両方）による。
+   */
   const confirmSaved = async (op: Op): Promise<boolean> => {
-    await fetchAttendance(today);
-    const st = useAppStore.getState();
-    // 取り直せていない（拒否・通信失敗）＝確認できていない
-    if (st.gasError) return false;
-    const rec = st.attendance.find(a => a.date === today && a.name === studentName);
+    const reread = await fetchAttendance(today);
+    if (!reread) return false;
+    const rec = findAttendance(useAppStore.getState().attendance, today, studentName);
     return op === 'in' ? !!rec : !!rec?.checkoutTime;
   };
 
