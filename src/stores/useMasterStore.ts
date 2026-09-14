@@ -4,6 +4,8 @@ import type { TimetableTemplate, StudentRecord, Student, AttendanceRecord, Perio
 import { DEFAULT_TT } from '../types/master';
 import { auth, isAllowedDomain } from '../firebase';
 import { classifyRole } from '../lib/role';
+// ★窓口URLの決め方は1箇所に集約した（台帳 A4-94）。ここで localStorage を直接読まないこと
+import { resolveGasUrl } from '../lib/gasUrl';
 // ★連携の結果（成否＋理由）は dxResult.ts にまとめてある（台帳 A4-86）
 import { toDxResult } from './dxResult';
 import type { DxCheckInResult } from './dxResult';
@@ -37,7 +39,21 @@ function mapStudentToGas(s: Student & { dx_password?: string }) {
 
 // GAS WebApp URL
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwW8j8jnGDBD8PKO_EEfCOFikdhkoSiFcGlRVi0hSU99fQ2xC0D2C_MLCwqIQmIUc7R/exec';
-const GAS_URL = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
+
+// ★2026-09-14（台帳 A4-94）: ここで localStorage を直接読まない。
+//   以前は
+//     const GAS_URL = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
+//   という「読み込み時に1回だけ決まる定数」で、しかも fetchAll は別の作法で
+//   同じ値を読んでいた（片方は既定に落ち、片方は黙って止まる）。
+//   端末に古い gas_url が残っていると、生徒は何をしても直せなかった。
+//   ★いまは呼ぶたびに決める。生徒は上書きを読まない（gasUrl.ts を見ること）。
+function currentGasUrl(): string {
+  return resolveGasUrl({
+    saved: localStorage.getItem('gas_url'),
+    def: DEFAULT_GAS_URL,
+    role: classifyRole(auth.currentUser?.email || ''),
+  }).url;
+}
 
 // QR GAS URL（★別プロジェクトの窓口。A4-41 の番人は入っていない＝今回の対象外）
 const QR_GAS_URL = 'https://script.google.com/macros/s/AKfycbxVpj2Uyi_20_eO_JbTM0fVcGK0znTzk7Odbuf6xz0Gs_5V6DYS1nU30xooIVdiKsADpQ/exec';
@@ -137,7 +153,8 @@ async function gasCall<T>(
   action: string,
   payload: Record<string, unknown> = {},
 ): Promise<GasResult<T>> {
-  if (!GAS_URL) return { ok: false, failure: 'network', reason: 'noUrl' };
+  const gasUrl = currentGasUrl();
+  if (!gasUrl) return { ok: false, failure: 'network', reason: 'noUrl' };
 
   const idToken = await getIdToken();
   if (!idToken) {
@@ -148,7 +165,7 @@ async function gasCall<T>(
 
   let json: unknown;
   try {
-    const res = await fetch(GAS_URL, {
+    const res = await fetch(gasUrl, {
       method: 'POST',
       // ★headers は付けない（プリフライト回避）。mode も指定しない
       body: JSON.stringify({ action, idToken, ...payload }),
@@ -248,7 +265,8 @@ interface AppState {
 
   fetchAll: () => Promise<void>;
   fetchStudents: () => Promise<void>;
-  fetchAttendance: (date: string) => Promise<void>;
+  /** 戻り値＝裏側から取り直せたか（false＝確認できていない） */
+  fetchAttendance: (date: string) => Promise<boolean>;
   fetchPeriod2: (week: string) => Promise<void>;
   fetchQrData: () => Promise<void>;
   setGasUrl: (url: string) => void;
@@ -295,7 +313,7 @@ export const useAppStore = create<AppState>()(
       period2: [],
       qrData: null,
       loading: false,
-      gasUrl: GAS_URL,
+      gasUrl: currentGasUrl(),
       gasError: '',
       gasErrorKind: '',
 
@@ -308,10 +326,17 @@ export const useAppStore = create<AppState>()(
       },
 
       fetchAll: async () => {
-        // ★既存の挙動（今回変えていない）: gas_url を一度も入れていない端末では
-        //   ここは何もせずに抜ける。新しいブラウザでは管理画面でURLを一度入れる。
-        const url = localStorage.getItem('gas_url');
-        if (!url) { set({ loading: false }); return; }
+        // ★2026-09-14（台帳 A4-94）: ここで localStorage を直接読むのをやめた。
+        //   以前は「gas_url が入っていなければ黙って抜ける」作りで、
+        //   ・gasCall は既定に落ちるのに、ここだけ止まる（同じ値の読み方が2通りあった）
+        //   ・止まったことが画面のどこにも出ない
+        //   という二重の問題があった。いまは gasCall と同じ決め方を使う。
+        if (!currentGasUrl()) {
+          // 窓口が無いのは作りの問題。黙って抜けず、画面に出す
+          setGasError(MSG_NETWORK, 'network');
+          set({ loading: false });
+          return;
+        }
 
         // ────────────────────────────────────────────────────────────
         // ★2026-09-09（台帳 A4-41）: getRecs と getStudents は職員だけ。
@@ -370,10 +395,18 @@ export const useAppStore = create<AppState>()(
         }
       },
 
+      // ★2026-09-14（台帳 A4-95）: 取り直せたかどうかを返す。
+      //   以前は戻り値が無く、呼び出し側は「画面の帯（gasError）が立っていないか」で
+      //   代用していた。帯は別の失敗でも立つので、関係のない失敗で
+      //   「確認できませんでした」になっていた。
       fetchAttendance: async (date: string) => {
         // ★date は本文に入れる（クエリではない）
         const res = await gasCall<AttendanceRecord[]>('getAttendance', { date });
-        if (res.ok && Array.isArray(res.data)) set({ attendance: res.data });
+        if (res.ok && Array.isArray(res.data)) {
+          set({ attendance: res.data });
+          return true;
+        }
+        return false;
       },
 
       fetchPeriod2: async (week: string) => {
