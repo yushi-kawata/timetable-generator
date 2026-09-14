@@ -20,6 +20,14 @@
 
 export type Op = 'in' | 'out';
 
+/**
+ * 連携（dxCheckIn）を【見送った】理由。★「送れなかった」ではなく「送っていない」。
+ *  saveFailed   … 校内の記録が残らなかったことが確定している
+ *  saveUnknown  … 校内の記録が残ったかどうか分からない
+ *  notConfirmed … 確認したが、校内の記録が見つからなかった
+ */
+export type DxSkipReason = 'saveFailed' | 'saveUnknown' | 'notConfirmed';
+
 /** 校内の記録が書けなかったときの理由。'' は理由が分からない */
 export type SaveFailureKind = '' | 'signin' | 'forbidden' | 'network';
 
@@ -63,6 +71,11 @@ export type RecordFlowDeps = {
   onSaveSettled?: () => void;
   /** 書けたことを確かめられた直後（フォーカス移動・下校ボタンの間引き） */
   onConfirmed?: (op: Op) => void;
+  /**
+   * 連携を【見送った】ことを画面へ伝える。★黙って抜けないための出口。
+   * 台帳 A4-86 が10日間見つからなかったのは、見送りがどこにも残らなかったため。
+   */
+  onDxSkipped?: (op: Op, why: DxSkipReason) => void;
 };
 
 export async function recordFlow(op: Op, d: RecordFlowDeps): Promise<FlowOutcome> {
@@ -79,6 +92,8 @@ export async function recordFlow(op: Op, d: RecordFlowDeps): Promise<FlowOutcome
     const kind = d.saveFailureKind();
     const certain = kind === 'forbidden' || kind === 'signin';
     d.setReq(certain ? { kind: 'failed', op } : { kind: 'unknown', op, retried: false });
+    // ★見送ったことを画面へ出す。ここを黙ると「押したのに何も起きない」に見える
+    if (d.onDxSkipped) d.onDxSkipped(op, certain ? 'saveFailed' : 'saveUnknown');
     return certain ? 'saveFailed' : 'saveUnknown';
   }
 
@@ -114,6 +129,8 @@ export type VerifyFlowDeps = {
   isCurrent: () => boolean;
   setReq: (req: FlowReq) => void;
   onConfirmed?: (op: Op) => void;
+  /** 連携を見送ったことを画面へ伝える（recordFlow と同じ約束） */
+  onDxSkipped?: (op: Op, why: DxSkipReason) => void;
 };
 
 /**
@@ -135,6 +152,7 @@ export async function verifyFlow(op: Op, d: VerifyFlowDeps): Promise<FlowOutcome
 
   if (!confirmed) {
     d.setReq({ kind: 'unknown', op, retried: true });
+    if (d.onDxSkipped) d.onDxSkipped(op, 'notConfirmed');
     return 'notConfirmed';
   }
 

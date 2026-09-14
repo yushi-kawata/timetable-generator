@@ -17,7 +17,7 @@ const { recordFlow, verifyFlow } = await loadTs('src/components/student/attendan
 
 /** 呼ばれた回数と引数を数える土台 */
 function makeDeps(over = {}) {
-  const calls = { dx: [], reqs: [], confirmed: [], saved: [] };
+  const calls = { dx: [], reqs: [], confirmed: [], saved: [], skipped: [] };
   const deps = {
     save: async op => { calls.saved.push(op); return true; },
     saveFailureKind: () => '',
@@ -26,6 +26,7 @@ function makeDeps(over = {}) {
     isCurrent: () => true,
     setReq: r => { calls.reqs.push(r); },
     onConfirmed: op => { calls.confirmed.push(op); },
+    onDxSkipped: (op, why) => { calls.skipped.push([op, why]); },
     ...over,
   };
   return { deps, calls };
@@ -164,4 +165,66 @@ test('「記録を確認する」は新しい校内記録を作らない（読�
   const { deps, calls } = makeDeps({ dxAlreadySent: () => false });
   await verifyFlow('in', deps);
   assert.deepEqual(calls.saved, [], 'checkIn / checkOut を呼ばないこと');
+});
+
+// ── 見送りを黙って済ませない（画面側の「無言の出口」を塞ぐ）────────────
+//   ★台帳 A4-86 の本体は「連携が呼ばれない」ことだったが、10日間も気づけな
+//     かった理由は【呼ばなかったことがどこにも残らない】ことだった。
+//     裏側（GAS）は失敗しても audit に1行残す＝無言の出口が無い。
+//     画面側にだけ無言の出口が残っていると、「audit に dxCheckIn が無い」を
+//     見ても ①画面が呼んでいない ②呼んだが手前で落ちた の区別が付かない。
+//   ★連携を【見送った】ときは、必ずその理由を画面へ伝えること。
+test('校内保存が拒否されたとき、連携を見送ったことを画面へ伝える', async () => {
+  const { deps, calls } = makeDeps({
+    save: async () => false,
+    saveFailureKind: () => 'forbidden',
+  });
+
+  const outcome = await recordFlow('out', deps);
+
+  assert.equal(outcome, 'saveFailed');
+  assert.deepEqual(calls.dx, [], '学校に記録が無いのに向こうだけ登録してはいけない');
+  assert.deepEqual(calls.skipped, [['out', 'saveFailed']],
+    '見送ったことを黙って済ませないこと');
+});
+
+test('校内保存の成否が分からないときも、見送りを画面へ伝える', async () => {
+  const { deps, calls } = makeDeps({
+    save: async () => false,
+    saveFailureKind: () => 'network',
+  });
+
+  const outcome = await recordFlow('out', deps);
+
+  assert.equal(outcome, 'saveUnknown');
+  assert.deepEqual(calls.dx, []);
+  assert.deepEqual(calls.skipped, [['out', 'saveUnknown']]);
+});
+
+test('「記録を確認する」で記録が見つからないときも、見送りを画面へ伝える', async () => {
+  const { deps, calls } = makeDeps({
+    confirmSaved: async () => false,
+    dxAlreadySent: () => false,
+  });
+
+  const outcome = await verifyFlow('out', deps);
+
+  assert.equal(outcome, 'notConfirmed');
+  assert.deepEqual(calls.dx, []);
+  assert.deepEqual(calls.skipped, [['out', 'notConfirmed']]);
+});
+
+// ★出し過ぎも事故になる（下の2本は「言わないこと」の試験）
+test('追い越されたときは見送りを伝えない（新しい操作の表示を上書きしない）', async () => {
+  const { deps, calls } = makeDeps({ isCurrent: () => false });
+  assert.equal(await recordFlow('in', deps), 'superseded');
+  assert.deepEqual(calls.dx, []);
+  assert.deepEqual(calls.skipped, [], '新しい操作がこれから連携する。黙って譲ること');
+});
+
+test('連携を試したときは見送り扱いにしない', async () => {
+  const { deps, calls } = makeDeps({ confirmSaved: async () => false });
+  assert.equal(await recordFlow('out', deps), 'notConfirmed');
+  assert.deepEqual(calls.dx, ['out']);
+  assert.deepEqual(calls.skipped, []);
 });

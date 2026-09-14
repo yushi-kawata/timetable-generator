@@ -3,8 +3,8 @@ import { useAppStore } from '../../stores/useMasterStore';
 import type { DxFailReason } from '../../stores/dxResult';
 import { nowTime } from './studentDate';
 import { recordFlow, verifyFlow } from './attendanceFlow';
-import type { Op, FlowReq } from './attendanceFlow';
-import { DX_REASON_TEXT, DX_RETRYABLE } from './dxMessages';
+import type { Op, FlowReq, DxSkipReason } from './attendanceFlow';
+import { DX_REASON_TEXT, DX_RETRYABLE, DX_SKIP_TEXT } from './dxMessages';
 
 /* ============================================================================
    出欠（生徒の記録票の中で、深緑を塗る唯一の場所）
@@ -54,7 +54,13 @@ type Dx =
   /** ★送信が通っただけ。向こうに反映されたかどうかは、この画面では分からない */
   | { kind: 'ok'; op: Op }
   /** 送れなかった。reason で次の一手を出し分ける */
-  | { kind: 'failed'; op: Op; reason: DxFailReason; code?: number };
+  | { kind: 'failed'; op: Op; reason: DxFailReason; code?: number }
+  /**
+   * ★そもそも送っていない（校内の記録が無い／確認できていない）。
+   *   'failed' と混ぜないこと。混ぜると「送ったが断られた」と読めてしまい、
+   *   audit に1行も無い理由が誰にも分からなくなる（台帳 A4-86）。
+   */
+  | { kind: 'skipped'; op: Op; why: DxSkipReason };
 
 type Props = {
   studentName: string;
@@ -157,6 +163,7 @@ export default function AttendancePanel({
       isCurrent: () => seqRef.current === seq,
       setReq,
       onSaveSettled: () => clearTimeout(slow),
+      onDxSkipped: (o, why) => applyDx({ kind: 'skipped', op: o, why }),
       onConfirmed: o => {
         // ボタンが消えるので、フォーカスを記録結果の見出しへ引き継ぐ
         later(() => resultRef.current?.focus(), 0);
@@ -180,6 +187,7 @@ export default function AttendancePanel({
       dxAlreadySent: () => dxRef.current.kind === 'ok' || dxRef.current.kind === 'sending',
       isCurrent: () => seqRef.current === seq,
       setReq,
+      onDxSkipped: (o, why) => applyDx({ kind: 'skipped', op: o, why }),
       onConfirmed: () => later(() => resultRef.current?.focus(), 0),
     });
   };
@@ -360,6 +368,13 @@ function DxLine({ dx, schoolConfirmed, onRetry }: {
   if (dx.kind === 'none') return null;
   if (dx.kind === 'sending') {
     return <span className="text-[var(--ink2)]">教務システム（younetDX）へ送っています…</span>;
+  }
+  // ★「送っていない」ことを、その場で言う。黙って何も出さないと
+  //   「押したのに何も起きなかった」と区別が付かない（台帳 A4-86）。
+  if (dx.kind === 'skipped') {
+    return (
+      <span className="text-[var(--ink2)]">{DX_SKIP_TEXT[dx.why]}</span>
+    );
   }
   if (dx.kind === 'ok') {
     // ★「反映しました」と言い切らない。こちらがやったのは【送ったこと】まで。
