@@ -7,6 +7,7 @@ import AttendancePanel from './AttendancePanel';
 import PeriodSelect from './PeriodSelect';
 import { TodayTimetable, WeekTimetable } from './TimetableRows';
 import { dateLabel, getWeekKey, todayDow, todayStr, weekRangeLabel } from './studentDate';
+import { findAttendance } from '../../lib/attendanceMatch';
 
 /* ============================================================================
    生徒の「今日」画面（一枚の白い記録票）
@@ -82,8 +83,14 @@ export default function StudentPage() {
     // user が変わったら（＝別の人が入り直したら）もう一度確認する
   }, [user, getMe, fetchAttendance, fetchPeriod2, fetchQrData, today, weekKey]);
 
+  // ★2026-09-16（台帳 A4-99）: === で比べないこと。スプレッドシートの日付は
+  //   日付型で返るため "2026-09-15T15:00:00.000Z"（＝日本時間 9/16 0時）の形で
+  //   届き、=== は黙って外れる。外れると記録があるのに「まだ登校を記録して
+  //   いません」と出て、【押せる「登校する」ボタン】が残る。押すと younetDX へ
+  //   本物の登録が再送される（抑止は画面にも裏側にも無い）＝二重登録の原因。
+  //   AttendancePanel と同じ findAttendance で、暦日にそろえてから比べる。
   const myAttendance = student
-    ? attendance.find(a => a.date === today && a.name === student.name)
+    ? findAttendance(attendance, today, student.name)
     : null;
   const isSchoolDay = !!(dow && student?.days[dow]);
   const mySelections = student

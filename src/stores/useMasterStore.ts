@@ -6,6 +6,8 @@ import { auth, isAllowedDomain } from '../firebase';
 import { classifyRole } from '../lib/role';
 // ★窓口URLの決め方は1箇所に集約した（台帳 A4-94）。ここで localStorage を直接読まないこと
 import { resolveGasUrl } from '../lib/gasUrl';
+// ★出欠の行の見つけ方は1箇所に集約してある（台帳 A4-95 / A4-99）。日付は === で比べない
+import { findAttendance } from '../lib/attendanceMatch';
 // ★連携の結果（成否＋理由）は dxResult.ts にまとめてある（台帳 A4-86）
 import { toDxResult } from './dxResult';
 import type { DxCheckInResult } from './dxResult';
@@ -502,7 +504,10 @@ export const useAppStore = create<AppState>()(
         if (!res.ok || res.data?.ok === false) return false;
         // ★裏側に通ってから画面に出す。先に出すと、拒否されても「登校済み」に見える
         set((s) => {
-          const existing = s.attendance.find(a => a.date === date && a.name === name);
+          // ★2026-09-16（台帳 A4-99）: === で比べない。シートから取り直した行の
+          //   日付は日付型（ISO文字列）で入っているので、=== では既にある行を
+          //   見つけられず、同じ日の行が二重に増える。画面と同じ findAttendance で。
+          const existing = findAttendance(s.attendance, date, name);
           if (existing) return s;
           return {
             attendance: [...s.attendance, { date, name, grade, checkinTime: time, checkoutTime: '' }],
@@ -517,11 +522,15 @@ export const useAppStore = create<AppState>()(
       checkOut: async (name, date, time) => {
         const res = await gasCall<{ ok?: boolean }>('checkOut', { name, date, time });
         if (!res.ok || res.data?.ok === false) return false;
-        set((s) => ({
-          attendance: s.attendance.map(a =>
-            a.date === date && a.name === name ? { ...a, checkoutTime: time } : a
-          ),
-        }));
+        set((s) => {
+          // ★2026-09-16（台帳 A4-99）: ここも === で比べない。外れると裏側には
+          //   下校が入っているのに、画面の行だけ下校時刻が空のまま残る。
+          const target = findAttendance(s.attendance, date, name);
+          if (!target) return s;
+          return {
+            attendance: s.attendance.map(a => (a === target ? { ...a, checkoutTime: time } : a)),
+          };
+        });
         return true;
       },
 
