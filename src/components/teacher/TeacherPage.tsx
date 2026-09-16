@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/useMasterStore';
 import { DAYS, DAY_ICONS, ROOMS, GRADE_ROOM, SELECTABLE_PERIODS } from '../../types/master';
 import type { DayOfWeek } from '../../types/master';
+// ★時刻の表し方は1箇所に集約してある（生徒の画面と同じ規則で出す）
+import { toTimeText } from '../../lib/timeText';
 
 const DAY_HEADERS: Record<DayOfWeek, string> = {
   月: 'bg-[var(--mon)]', 火: 'bg-[var(--tue)]', 水: 'bg-[var(--wed)]', 木: 'bg-[var(--thu)]', 金: 'bg-[var(--fri)]',
@@ -62,7 +64,8 @@ export default function TeacherPage() {
       return [
         s.name, s.grade, s.classroom,
         a ? '出席' : '未出席',
-        a?.checkinTime || '', a?.checkoutTime || '',
+        // ★2026-09-16: 生の値を書き出さない（日付型だと 1899-12-30T…Z のまま出る）
+        toTimeText(a?.checkinTime), toTimeText(a?.checkoutTime),
       ];
     });
     const csv = '\uFEFF' + [header, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
@@ -163,8 +166,9 @@ export default function TeacherPage() {
                             <span className="badge !bg-red-50 !text-red-600">未出席</span>
                           )}
                         </td>
-                        <td className="text-sm">{a?.checkinTime || <span className="text-[var(--ink3)]">—</span>}</td>
-                        <td className="text-sm">{a?.checkoutTime || <span className="text-[var(--ink3)]">—</span>}</td>
+                        {/* ★時刻は toTimeText を通す。読めない値は — にする（生の値を出さない） */}
+                        <td className="text-sm">{toTimeText(a?.checkinTime) || <span className="text-[var(--ink3)]">—</span>}</td>
+                        <td className="text-sm">{toTimeText(a?.checkoutTime) || <span className="text-[var(--ink3)]">—</span>}</td>
                       </tr>
                     );
                   })

@@ -4,6 +4,8 @@ import type { DxFailReason } from '../../stores/dxResult';
 import { nowTime } from './studentDate';
 import { recordFlow, verifyFlow } from './attendanceFlow';
 import { findAttendance } from '../../lib/attendanceMatch';
+// ★時刻の表し方は1箇所に集約してある。日付型で届いた時刻を生のまま出さない
+import { toTimeText } from '../../lib/timeText';
 import type { Op, FlowReq, DxSkipReason } from './attendanceFlow';
 import { DX_REASON_TEXT, DX_RETRYABLE, DX_SKIP_TEXT } from './dxMessages';
 
@@ -301,9 +303,15 @@ function buildResult(a: {
   checkinTime: string;
   checkoutTime: string;
 }): ResultView {
+  // ★2026-09-16: 生のまま出さないこと。シートの「時刻だけ」のセルは日付型で返り、
+  //   "1899-12-30T00:08:00.000Z"（＝日本時間 9:08）の形で届く。本番の画面に
+  //   この文字列がそのまま出ていた。読めない値は行ごと出さない（'' が返る）。
+  //   ★checkedIn / checkedOut の判定はここを通さない（通すと未記録に戻る）。
   const times: { label: string; time: string }[] = [];
-  if (a.checkinTime) times.push({ label: '登校', time: a.checkinTime });
-  if (a.checkoutTime) times.push({ label: '下校', time: a.checkoutTime });
+  const checkinText = toTimeText(a.checkinTime);
+  const checkoutText = toTimeText(a.checkoutTime);
+  if (checkinText) times.push({ label: '登校', time: checkinText });
+  if (checkoutText) times.push({ label: '下校', time: checkoutText });
 
   // 1) 初期取得中
   if (a.loading) {
