@@ -3,13 +3,15 @@ import StudentPage from './components/student/StudentPage';
 import TeacherPage from './components/teacher/TeacherPage';
 import AdminPage from './components/admin/AdminPage';
 import HealthCheckPage from './components/health/HealthCheckPage';
+// ★教室の座席表（台帳 A4-107）。福岡GCの教室だけ。入口は職員にだけ出す
+import SeatChartPage from './components/seats/SeatChartPage';
 import LoginGate from './components/auth/LoginGate';
 import { AuthProvider } from './hooks/useAuth';
 import { useAuth } from './hooks/auth-context';
 import { useAppStore } from './stores/useMasterStore';
 import { classifyRole } from './lib/role';
 
-type Mode = 'student' | 'teacher' | 'admin' | 'health';
+type Mode = 'student' | 'teacher' | 'admin' | 'health' | 'seats';
 
 export default function App() {
   return (
@@ -141,14 +143,23 @@ export function AppInner() {
                 ? 'bg-green-400 text-green-900'
                 : mode === 'health'
                   ? 'bg-rose-400 text-rose-900'
-                  : 'bg-amber-400 text-amber-900'
+                  : mode === 'seats'
+                    ? 'bg-sky-300 text-sky-900'
+                    : 'bg-amber-400 text-amber-900'
             }`}
           >
-            {mode === 'student' ? '生徒用' : mode === 'health' ? '健康観察' : '教員用'}
+            {mode === 'student'
+              ? '生徒用'
+              : mode === 'health'
+                ? '健康観察'
+                : mode === 'seats'
+                  ? '座席表'
+                  : '教員用'}
           </span>
         </div>
         <div className="flex gap-3 text-sm items-center flex-wrap">
-          {mode !== 'student' && mode !== 'health' && (
+          {/* ★座席表は下の「← 戻る」を使う。ここを除外しないと戻るボタンが2つ並ぶ */}
+          {mode !== 'student' && mode !== 'health' && mode !== 'seats' && (
             <button
               onClick={() => setMode('student')}
               className="text-white/60 hover:text-white"
@@ -156,7 +167,7 @@ export function AppInner() {
               ← 生徒用に戻る
             </button>
           )}
-          {mode === 'health' && (
+          {(mode === 'health' || mode === 'seats') && (
             <button
               onClick={() => setMode('student')}
               className="text-white/60 hover:text-white"
@@ -175,6 +186,16 @@ export function AppInner() {
               {/* ★教員用ページの入口は職員にだけ出す（台帳 A4-41／2026-09-09 社長決裁）。
                   生徒に見せても中身は裏側が forbidden で止めるため、
                   開かない入口を見せる意味がない。合言葉は廃止済み。 */}
+              {/* ★座席表（台帳 A4-107）も職員にだけ出す。教室の iPad で開く画面で、
+                  氏名が並ぶので生徒の入口には置かない。 */}
+              {isStaff && (
+                <button
+                  onClick={() => setMode('seats')}
+                  className="text-white/60 hover:text-white"
+                >
+                  🪑 座席表
+                </button>
+              )}
               {isStaff && (
                 <button
                   onClick={() => setMode('admin')}
@@ -186,12 +207,20 @@ export function AppInner() {
             </>
           )}
           {(mode === 'teacher' || mode === 'admin') && (
-            <button
-              onClick={() => setMode('health')}
-              className="text-white/60 hover:text-white"
-            >
-              🏥 健康観察
-            </button>
+            <>
+              <button
+                onClick={() => setMode('seats')}
+                className="text-white/60 hover:text-white"
+              >
+                🪑 座席表
+              </button>
+              <button
+                onClick={() => setMode('health')}
+                className="text-white/60 hover:text-white"
+              >
+                🏥 健康観察
+              </button>
+            </>
           )}
           {/* ★いま誰で入っているかを常に見えるようにする（取り違えの事故を防ぐ） */}
           <span className="text-[11px] text-white/50 max-w-[180px] truncate" title={user.email || ''}>
@@ -258,6 +287,9 @@ export function AppInner() {
         {mode === 'student' && <StudentPage />}
         {mode === 'teacher' && <TeacherPage />}
         {mode === 'admin' && <AdminPage goTeacher={() => setMode('teacher')} />}
+        {/* ★座席表（台帳 A4-107）。窓口・見本データの切り替えは lib/seatChartApi.ts 側。
+            ここでは出し分けだけを行う（守りは裏側）。 */}
+        {mode === 'seats' && <SeatChartPage />}
         {/* ★2026-09-09（社長決裁・案B）: 健康観察の教員確認も、合言葉ではなく
             Googleログイン＋役割判定（isStaff）で通します。
             ・合言葉 teacher1234 は【公開バンドルに文字列で載っていて誰でも読めます】。

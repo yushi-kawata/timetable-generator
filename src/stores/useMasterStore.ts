@@ -49,7 +49,7 @@ const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwW8j8jnGDBD8PK
 //   同じ値を読んでいた（片方は既定に落ち、片方は黙って止まる）。
 //   端末に古い gas_url が残っていると、生徒は何をしても直せなかった。
 //   ★いまは呼ぶたびに決める。生徒は上書きを読まない（gasUrl.ts を見ること）。
-function currentGasUrl(): string {
+export function currentGasUrl(): string {
   return resolveGasUrl({
     saved: localStorage.getItem('gas_url'),
     def: DEFAULT_GAS_URL,

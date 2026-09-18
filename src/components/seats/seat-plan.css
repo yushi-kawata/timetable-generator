@@ -1,0 +1,546 @@
+/* ==========================================================================
+   教室の座席表の意匠（台帳 A4-107）
+   ==========================================================================
+   考え方（2026-09-18 社長指示「もっと洗練された意匠に」）:
+     もとのスプレッドシート版は、席も見出しも【同じ太さの黒い四角】でした。
+     ＝階層が無く、教卓がただの札で、空席と在席が同じ見た目。
+     ここでは【教室の平面図】として描き直します。
+
+     1. 教卓を図の錨にする  … 札ではなく“面”。実物と同じ左上に置き、
+                              下辺に前を示す線を入れて部屋の向きを図で示す
+     2. 大きさの対比で階層  … 氏名 ＞ 曜日 ＞ 教室名 ＞ 席の番号
+     3. 在・不在を形で分ける… 在席＝面と影を持つ／空席＝細い破線だけ
+     4. 余白にリズム        … 行の間（通路）は広く、隣の席との間は狭く
+     5. 色は意味にだけ      … 違反＝赤／名簿に無い＝注意色／固定席＝小さな札
+     6. 触れる部品は状態を持つ（hover / focus / 押下 / 選択中）
+
+   ★色・余白・書体はすべて既存のトークン（index.css の :root）を使うこと。
+     ここに新しい具体色を書かない（意匠の全面刷新は A4-74 の別案件）。
+   ★最優先は「数メートル離れて氏名が読めること」。凝るより読める大きさ。
+   ========================================================================== */
+
+/* ── 平面図そのもの（1枚の図面）───────────────────────────────── */
+.seat-plan {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+  background: var(--surface);
+  padding: 16px;
+}
+
+@media (min-width: 700px) {
+  .seat-plan { padding: 24px; }
+}
+
+/* ── 見出し帯：左＝教卓／中央＝曜日／右＝教室名 ───────────────── */
+.seat-plan-head {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  /* Swiss 的に、太い1本で図面と見出しを分ける */
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 20px;
+}
+
+/* 教卓。★ラベルではなく面。実物（A1:B2）と同じく左上・2列ぶんの幅 */
+.seat-desk {
+  flex: 0 0 auto;
+  min-width: 26%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 10px 16px;
+  background: var(--ink);
+  color: var(--surface);
+  border-radius: var(--radius-control);
+  /* 教卓の“前”＝生徒側を向いている辺 */
+  box-shadow: inset 0 -4px 0 0 var(--accent);
+}
+
+.seat-desk-label {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+}
+
+/* 曜日＝見出しであり、操作子でもある */
+.seat-days {
+  flex: 1 1 260px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.seat-day {
+  display: inline-flex;
+  align-items: baseline;
+  min-height: 48px;
+  padding: 6px 10px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--ink3);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: color var(--duration-feedback) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .seat-day:hover {
+    color: var(--ink);
+    border-bottom-color: var(--border-strong);
+  }
+}
+
+.seat-day:active { transform: translateY(1px); }
+
+/* いま見ている曜日だけ、大きく・濃く・下線を引く（階層をつける） */
+.seat-day[aria-pressed='true'] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-size: clamp(1.375rem, 2.4vw, 1.75rem);
+}
+
+/* 「曜日」の2文字は、選ばれているものにだけ付ける（見出しとして読ませる） */
+.seat-day-suffix { display: none; font-size: 0.7em; }
+.seat-day[aria-pressed='true'] .seat-day-suffix { display: inline; }
+
+/* ★「①」のような枠の札。いまは使っていない（在庫は持たない方針） */
+.seat-slot {
+  align-self: center;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ink2);
+}
+
+.seat-room-name {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: auto;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--ink2);
+}
+
+/* ── 席の並び ─────────────────────────────────────────────────── */
+.seat-plan-body {
+  display: flex;
+  flex-direction: column;
+  /* ★行の間＝通路。隣の席との間より広くとる（余白に意味を持たせる） */
+  gap: 18px;
+}
+
+@media (min-width: 700px) {
+  .seat-plan-body { gap: 24px; }
+}
+
+.seat-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* 行の番号。平面図の目印なので、氏名よりずっと弱く */
+.seat-row-no {
+  flex: 0 0 auto;
+  width: 14px;
+  align-self: center;
+  text-align: right;
+  font-size: 0.6875rem;
+  line-height: 1;
+  color: var(--ink3);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.seat-row-cells {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--seat-cols, 7), minmax(0, 1fr));
+  /* 隣の席との間は狭い（横は「隣り合っている」ことを見せる） */
+  gap: 6px;
+}
+
+@media (min-width: 700px) {
+  .seat-row-cells { gap: 8px; }
+}
+
+/* ── 席 ───────────────────────────────────────────────────────── */
+.seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 74px;
+  padding: 8px 4px;
+  border-radius: var(--radius-control);
+  text-align: center;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+}
+
+@media (min-width: 700px) {
+  .seat { min-height: 104px; padding: 12px 8px; }
+}
+
+/* 席の番号。いちばん弱い層 */
+.seat-pos {
+  font-size: 0.625rem;
+  line-height: 1;
+  color: var(--ink3);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* 氏名。★この画面でいちばん大きい文字。遠くから読めることが最優先 */
+.seat-name {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: clamp(1rem, 2.4vw, 1.875rem);
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.seat-name-line { display: block; }
+
+/* 固定席・名簿に無い、などの小さな札 */
+.seat-flag {
+  font-size: 0.625rem;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--ink3);
+}
+
+/* 在席＝面と重みを持つ */
+.seat--taken {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  box-shadow: 0 1px 0 0 var(--border);
+}
+
+/* 空席＝細い破線だけ。塗らない（在席と同じ四角にしない） */
+.seat--empty {
+  border: 1px dashed var(--border);
+  background: none;
+  box-shadow: none;
+}
+.seat--empty .seat-pos { opacity: 0.6; }
+
+/* 名簿に無い学籍番号の席。空席と見分けられるようにする */
+.seat--orphan {
+  border: 1px dashed var(--warning);
+  background: var(--warning-bg);
+}
+.seat--orphan .seat-name,
+.seat--orphan .seat-pos,
+.seat--orphan .seat-flag {
+  color: var(--warning);
+}
+
+/* 決まりごとに反している／同じ席に2人 */
+.seat--bad {
+  border: 2px solid var(--danger);
+  background: var(--danger-bg);
+}
+.seat--bad .seat-name { color: var(--danger); }
+
+/* 編集中に掴める席。手つきで分かるようにする */
+.seat--pickable { cursor: pointer; }
+@media (hover: hover) {
+  .seat--pickable:hover {
+    border-color: var(--accent);
+    background: var(--surface2);
+  }
+}
+.seat--pickable:active { transform: translateY(1px); }
+
+/* 選んでいる席 */
+.seat--picked {
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 2px 8px rgb(20 91 80 / 18%);
+}
+
+/* 移動先の候補 */
+.seat--target {
+  border: 1px dashed var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
+}
+.seat-target-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* ── 図面の足元 ───────────────────────────────────────────────── */
+.seat-plan-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+  color: var(--ink2);
+}
+
+.seat-plan-foot-flag {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* ── 編集の道具 ───────────────────────────────────────────────── */
+.seat-tools {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface2);
+}
+
+.seat-tools-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.seat-tools-hint {
+  margin: 10px 0 0;
+  font-size: 0.875rem;
+  color: var(--ink2);
+}
+
+/* ── 伏せた状態。氏名は【描かない】（隠すのではなく出さない）───── */
+.seat-mask {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 320px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+  background: var(--surface2);
+  color: var(--ink2);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .seat-mask:hover { background: var(--accent-soft); }
+}
+.seat-mask-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* ── この画面の小さな囲み ─────────────────────────────────────── */
+.seat-note {
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.seat-note--warn { background: var(--warning-bg); color: var(--warning); }
+.seat-note--error { background: var(--danger-bg); color: var(--danger); }
+.seat-note--info { background: var(--surface2); color: var(--ink2); }
+.seat-note--ok { background: var(--success-bg); color: var(--success); }
+
+@media (prefers-reduced-motion: reduce) {
+  .seat-day,
+  .seat--pickable:active,
+  .seat-day:active {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   決まりごとの下書き補助（貼り付け用テキストを作るだけの道具）
+   ★座席表そのものではないので、図面より弱い見た目にする
+   ========================================================================== */
+.cdraft {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.cdraft-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.cdraft-note {
+  margin: 0 0 12px;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--ink2);
+}
+
+.cdraft-kinds {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.cdraft-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+@media (hover: hover) {
+  .cdraft-kind:hover { background: var(--surface2); }
+}
+.cdraft-kind[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.cdraft-kind-label { font-size: 0.9375rem; font-weight: 700; }
+.cdraft-kind-note { font-size: 0.6875rem; color: var(--ink3); }
+
+.cdraft-seat,
+.cdraft-pairmode {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 0.875rem;
+  color: var(--ink2);
+}
+
+.cdraft-seat input {
+  width: 4.5rem;
+  margin: 0 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.cdraft-mode {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cdraft-mode[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.cdraft-names {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.cdraft-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .cdraft-name:hover { background: var(--surface2); }
+}
+.cdraft-name[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 「最初の1人」が誰かを見せる番号 */
+.cdraft-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.cdraft-out-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 0.875rem;
+  color: var(--ink2);
+}
+
+.cdraft-picked { color: var(--ink3); }
+
+.cdraft-out-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.cdraft-text {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface2);
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  resize: vertical;
+}
