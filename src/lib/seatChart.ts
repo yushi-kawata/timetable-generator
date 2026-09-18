@@ -372,6 +372,29 @@ export function nameLines(name: string): string[] {
   return rest ? [first, rest] : [first];
 }
 
+/**
+ * 2つの並びが同じかどうか（★順番は問わない）。
+ *
+ * ★何のためにあるか（台帳 A4-101 / 2026-09-18 の実害）:
+ *   保存は届いていたのに、応答（2段目）だけが落ちて画面が
+ *   「保存できませんでした」と出した。社長がそれを見て押し直し、
+ *   同じ内容が2回書かれた。
+ *   ＝【「失敗なのに成功と出る」の逆も同じくらい危ない】（人に押し直させるため）。
+ *   そこで、保存が失敗に見えたときは読み直して、この関数で突き合わせる。
+ *
+ * ★比べるのは 学籍番号・行・列 の【集合】。並び順は見ない
+ *   （裏側が並べ替えて返しても「違う」と言わないため）。
+ */
+export function sameSeating(a: Seat[], b: Seat[]): boolean {
+  const key = (seats: Seat[]) =>
+    seats
+      .map((s) => s.student_id + '/' + s.row + '/' + s.col)
+      .sort()
+      .join('|');
+  if (a.length !== b.length) return false;
+  return key(a) === key(b);
+}
+
 /** その日の曜日。土日は null（月〜金しか無い） */
 export function weekdayOf(d: Date): DayOfWeek | null {
   const i = d.getDay();                 // 0=日

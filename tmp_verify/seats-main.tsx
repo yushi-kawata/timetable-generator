@@ -14,6 +14,11 @@
 //  ?flaky=N         … getSeating の最初のN回だけ 404（★A4-101 のやり直しの確認）
 //  ?saveflaky=1     … saveSeating がいつも 404（★書き込みは再送しないことの確認）
 //  ?reject=1        … getSeating が forbidden を返す（★拒否は1回でやめることの確認）
+//  ?studentsflaky=N … getStudents の最初のN回だけ 404（★既存の gasCall 側の確認）
+//  ★保存の「届いたのに返事だけ落ちた」の再現（台帳 A4-101）:
+//  ?savedrop=1      … 保存を【実際に反映してから】404 を返す（＝読み直せば入っている）
+//  ?savelost=1      … 保存を【反映せずに】404 を返す（＝読み直しても入っていない）
+//  ?rereadfail=1    … 保存後の読み直しも失敗させる（＝確認できない）
 //  ?seats=badrules  … 知らない種別・項目の足りない決まりごとが混ざっている
 //  ?seats=nogrid    … 窓口が grid を返さない
 //  ?seatDemo=1      … 窓口を叩かず見本データ（開発時の既定の使い方）
@@ -28,7 +33,7 @@ const calls: string[] = [];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).__seatCalls = calls;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-(window as any).__hits = () => ({ seat: seatHits, save: saveHits });
+(window as any).__hits = () => ({ seat: seatHits, save: saveHits, students: studentsHits });
 
 const J = (o: unknown) => new Response(JSON.stringify(o), { status: 200 });
 
@@ -206,13 +211,22 @@ function seatPayload() {
     // ★grid を返さない窓口（控えの値で描き、そうと分かる印が出ること）
     return { students: STUDENTS, seats: byDay(SEATS), asof: ASOF, constraints: CONSTRAINTS };
   }
-  return { students: STUDENTS, grid: GRID, seats: byDay(SEATS), asof: ASOF, constraints: CONSTRAINTS };
+  // ★既定は「持ち回りの席」を返す＝保存したものが読み直しに出る
+  return { students: STUDENTS, grid: GRID, seats: liveSeats, asof: ASOF, constraints: CONSTRAINTS };
 }
 
 let seatHits = 0;
 let saveHits = 0;
 /** ★A4-101：応答の2段目が落ちた状態（404）を、最初のN回だけ再現する */
 const flaky = Number(params.get('flaky') || 0);
+/** ★既存の窓口（赤帯を出す gasCall 側）にも効いているかを見るため */
+const studentsFlaky = Number(params.get('studentsflaky') || 0);
+let studentsHits = 0;
+/** ★保存が本当に反映されたかを見るため、曜日ごとの席を持ち回りで書き換える */
+const liveSeats: Record<string, unknown[]> = {
+  月: [...SEATS], 火: [...SEATS], 水: [...SEATS], 木: [...SEATS], 金: [...SEATS],
+};
+let rereadFailLeft = 0;
 
 const origFetch = window.fetch.bind(window);
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -236,6 +250,11 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     if (flaky > 0 && seatHits <= flaky) {
       return new Response('not found', { status: 404 });
     }
+    // ★保存のあとの「読み直し」も失敗させる（＝確認できない状態を作る）
+    if (rereadFailLeft > 0) {
+      rereadFailLeft--;
+      return new Response('not found', { status: 404 });
+    }
     if (kase === 'failafter' && seatHits > 1) return new Response('boom', { status: 500 });
     return J(seatPayload());
   }
@@ -245,8 +264,25 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push('saveSeating:' + String(body.day) + ':' + (body.seats || []).length);
     // ★書き込みは再送されないこと（二重書きの防止）を確かめる
     if (params.get('saveflaky') === '1') return new Response('not found', { status: 404 });
+
+    const sent = (body.seats || []) as unknown[];
+    const d = String(body.day || '');
+
+    // ★届いたのに返事だけ落ちた（2026-09-18 に本番で起きた形）
+    if (params.get('savedrop') === '1') {
+      liveSeats[d] = sent;                       // ← 実際に保存されている
+      if (params.get('rereadfail') === '1') rereadFailLeft = 3;  // 読み直しも落とす
+      return new Response('not found', { status: 404 });
+    }
+    // ★本当に届かなかった（保存されていない）
+    if (params.get('savelost') === '1') {
+      return new Response('not found', { status: 404 });
+    }
     // 既定は「窓口がまだ無い」＝本番の今の状態。?save=ok で成功を返す
-    if (params.get('save') === 'ok') return J({ ok: true });
+    if (params.get('save') === 'ok') {
+      liveSeats[d] = (body.seats || []) as unknown[];
+      return J({ ok: true });
+    }
     // ★契約 v4：拒否は {"ok":false,"reason":"…"}（error ではない）
     return J({ ok: false, reason: 'not implemented yet' });
   }
@@ -254,7 +290,13 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   // 既存の画面が動くための最低限の返事
   if (action === 'getTT') return J(null);
   if (action === 'getMe') return J({ ok: false, reason: 'notEnrolled' });
-  if (action === 'getStudents') return J([]);
+  if (action === 'getStudents') {
+    studentsHits++;
+    if (studentsFlaky > 0 && studentsHits <= studentsFlaky) {
+      return new Response('not found', { status: 404 });
+    }
+    return J([]);
+  }
   if (action === 'getAttendance') return J([]);
   if (action === 'getPeriod2') return J([]);
   if (action === 'getRecs') return J([]);

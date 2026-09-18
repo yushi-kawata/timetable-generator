@@ -16,7 +16,7 @@
 //   メール・パスワード・要配慮情報）を返してきても、画面には届きません。
 import { auth, isAllowedDomain } from '../firebase';
 import { currentGasUrl } from '../stores/useMasterStore';
-import { normalizeSeatChart } from './seatChart';
+import { normalizeSeatChart, sameSeating } from './seatChart';
 import { constraintIssues, normalizeConstraints } from './seatAssign';
 // ★やり直しの決まりは1か所（台帳 A4-101）。ここに秒数や回数を書かないこと
 import {
@@ -24,6 +24,7 @@ import {
   gasFailureDetail,
   retryDelayMs,
   shouldRetry,
+  urlTail,
 } from './gasRetry';
 import type { GasOutcome } from './gasRetry';
 import type { SeatConstraints } from './seatAssign';
@@ -67,10 +68,29 @@ export type SeatChartFetch =
   | { ok: false; message: string; hint: string };
 
 export type SeatSaveResult =
-  | { ok: true }
-  | { ok: false; message: string; hint: string };
+  /**
+   * ok:true … 保存できている。
+   *   reconciled:true は「応答は受け取れなかったが、読み直したら入っていた」状態。
+   *   ★この場合に赤を出さないこと（出すと人が押し直して二重に書く）。
+   */
+  | { ok: true; reconciled?: boolean }
+  /**
+   * ok:false の3種類。★混ぜないこと。
+   *   notSaved  … 読み直して、入っていないと確かめた（もう一度押してよい）
+   *   unknown   … 読み直しも失敗。★入ったかどうか分からない。正直にそう出す
+   *   rejected  … 窓口がはっきり断った（ログイン・権限・作りの問題）
+   */
+  | {
+      ok: false;
+      kind: 'notSaved' | 'unknown' | 'rejected';
+      message: string;
+      hint: string;
+      /** 切り分けの1行（★保存はやり直さないので「◯回試しました」は出さない） */
+      detail?: string;
+    };
 
 const MSG_FAILED = '座席表を取得できませんでした';
+const MSG_SAVE_FAILED = '保存できませんでした';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -210,6 +230,56 @@ export async function fetchSeatChart(search: string): Promise<SeatChartFetch> {
 }
 
 /**
+ * 保存の返事が受け取れなかったときに、【届いていたかどうか】を確かめる。
+ *
+ * ★2026-09-18 の実害（台帳 A4-101）:
+ *   保存は届いていたのに応答（2段目）だけが落ち、画面が「保存できませんでした」と
+ *   出した。社長がそれを見て押し直し、同じ内容が2回書かれた。
+ *   ★「失敗なのに成功と出る」の逆も同じくらい危ない（人に押し直させるため）。
+ *
+ * ★★ここでは【送り直しません】。読み直して突き合わせるだけです。
+ *   送り直すのは、人がもう一度押したときだけ。
+ *
+ * 返し分け:
+ *   一致        → ok:true, reconciled:true （★赤を出さない）
+ *   不一致      → ok:false, kind:'notSaved'（もう一度押してよい）
+ *   読み直し失敗 → ok:false, kind:'unknown' （★どちらとも言い切らない）
+ */
+async function confirmSaved(
+  day: DayOfWeek,
+  sent: Seat[],
+  status: number | null,
+  url: string,
+): Promise<SeatSaveResult> {
+  const detail =
+    (status ? '応答 ' + status + '／' : '') + '窓口 ' + urlTail(url);
+
+  // ★読み直しは読み取りなので、やり直しつきの fetchSeatChart をそのまま使う
+  const again = await fetchSeatChart(window.location.search);
+  if (!again.ok) {
+    return {
+      ok: false,
+      kind: 'unknown',
+      message: '保存できたか確認できませんでした',
+      hint: 'シートを確かめてください。同じ操作を続けて押すと、二重に書かれることがあります',
+      detail,
+    };
+  }
+
+  const onServer = again.chart.seatsByDay[day] ?? [];
+  if (sameSeating(onServer, sent)) {
+    return { ok: true, reconciled: true };
+  }
+  return {
+    ok: false,
+    kind: 'notSaved',
+    message: '保存できませんでした',
+    hint: '読み直したところ、入っていませんでした。もう一度押してください',
+    detail,
+  };
+}
+
+/**
  * その曜日の並びを保存する。
  * ★押すまで保存されません（画面側が「未保存」を出すこと）。
  * ★失敗を成功に見せないこと。裏側が ok を返したときだけ成功にします。
@@ -224,17 +294,20 @@ export async function saveSeating(day: DayOfWeek, seats: Seat[]): Promise<SeatSa
   if (isSeatDemo(window.location.search)) {
     return {
       ok: false,
+      kind: 'rejected',
       message: '保存できませんでした',
       hint: '見本データの表示中は保存しません（窓口につながっていません）',
     };
   }
 
   const url = currentGasUrl();
-  if (!url) return { ok: false, message: '保存できませんでした', hint: '窓口の設定がありません' };
+  if (!url) {
+    return { ok: false, kind: 'rejected', message: MSG_SAVE_FAILED, hint: '窓口の設定がありません' };
+  }
 
   const user = auth.currentUser;
   if (!user || !isAllowedDomain(user.email || '') || user.emailVerified !== true) {
-    return { ok: false, message: '保存できませんでした', hint: 'ログインし直してください' };
+    return { ok: false, kind: 'rejected', message: MSG_SAVE_FAILED, hint: 'ログインし直してください' };
   }
   let idToken = '';
   try {
@@ -242,9 +315,14 @@ export async function saveSeating(day: DayOfWeek, seats: Seat[]): Promise<SeatSa
   } catch {
     idToken = '';
   }
-  if (!idToken) return { ok: false, message: '保存できませんでした', hint: 'ログインし直してください' };
+  if (!idToken) {
+    return { ok: false, kind: 'rejected', message: MSG_SAVE_FAILED, hint: 'ログインし直してください' };
+  }
 
-  let json: unknown;
+  // ★1回だけ送る（やり直さない）。届いたかどうかは、あとで読み直して確かめる
+  let json: unknown = null;
+  let status: number | null = null;
+  let delivered = true;
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -256,32 +334,46 @@ export async function saveSeating(day: DayOfWeek, seats: Seat[]): Promise<SeatSa
       }),
       redirect: 'follow',
     });
+    status = res.status;
     if (!res.ok) {
-      return {
-        ok: false,
-        message: '保存できませんでした',
-        hint: '通信の状態を確かめて、もう一度お試しください',
-      };
+      delivered = false;
+    } else {
+      try {
+        json = await res.json();
+      } catch {
+        delivered = false; // 空の返事（応答の2段目が落ちた形）
+      }
     }
-    json = await res.json();
   } catch {
-    return {
-      ok: false,
-      message: '保存できませんでした',
-      hint: '通信の状態を確かめて、もう一度お試しください',
-    };
+    delivered = false;
+    status = null;
+  }
+
+  // ── ★返事が受け取れなかったとき（台帳 A4-101 / 2026-09-18 の実害）──
+  //   2026-09-18、保存は【届いていた】のに応答だけ落ち、画面が
+  //   「保存できませんでした」と出した。社長が押し直し、同じ内容が2回書かれた。
+  //   ★「失敗なのに成功と出る」の逆も同じくらい危ない（人に押し直させるため）。
+  //   ここでは【再送せずに、読み直して突き合わせる】。
+  //   ★★自動で送り直さないこと。送り直すのは人が押したときだけ。
+  if (!delivered) {
+    return await confirmSaved(day, seats, status, url);
   }
 
   const err = (json as { error?: unknown } | null)?.error;
   if (err) {
     const reason = String((json as { reason?: unknown }).reason || err);
     if (err === 'unauthorized') {
-      return { ok: false, message: '保存できませんでした', hint: 'ログインし直してください' };
+      return { ok: false, kind: 'rejected', message: MSG_SAVE_FAILED, hint: 'ログインし直してください' };
     }
     if (err === 'forbidden') {
-      return { ok: false, message: '保存できませんでした', hint: 'この操作は先生用です' };
+      return { ok: false, kind: 'rejected', message: MSG_SAVE_FAILED, hint: 'この操作は先生用です' };
     }
-    return { ok: false, message: '保存できませんでした', hint: '窓口が応じませんでした（' + reason + '）' };
+    return {
+      ok: false,
+      kind: 'rejected',
+      message: MSG_SAVE_FAILED,
+      hint: '窓口が応じませんでした（' + reason + '）',
+    };
   }
 
   // ★★拒否は {"ok":false,"reason":"…"} で返ります（契約 v4／既存の saveStudents と同じ作法）。
@@ -292,7 +384,8 @@ export async function saveSeating(day: DayOfWeek, seats: Seat[]): Promise<SeatSa
     const reason = String(body?.reason ?? '').trim();
     return {
       ok: false,
-      message: '保存できませんでした',
+      kind: 'rejected',
+      message: MSG_SAVE_FAILED,
       hint: reason
         ? '裏側の返事：' + reason
         : '裏側が「保存した」と返していません。もう一度お試しください',

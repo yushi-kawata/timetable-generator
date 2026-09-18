@@ -23,6 +23,7 @@ const {
   SEAT_ROWS_FALLBACK,
   SEAT_COLS_FALLBACK,
   nameLines,
+  sameSeating,
 } = await loadTs('src/lib/seatChart.ts');
 
 const ALL = { 月: true, 火: true, 水: true, 木: true, 金: true };
@@ -434,4 +435,50 @@ test('★v4：ある曜日がまるごと空でも、マス目は描ける（空
 test('★seats が配列でも入れ物でもなければ採らない（黙って0件にしない）', () => {
   assert.equal(normalizeSeatChart({ students: [], seats: 'なし', asof: 'x' }).reason, 'noSeats');
   assert.equal(normalizeSeatChart({ students: [], asof: 'x' }).reason, 'noSeats');
+});
+
+
+// ============================================================================
+// ★保存が届いたかを読み直して突き合わせる（台帳 A4-101 / 2026-09-18 の実害）
+// ============================================================================
+// 保存は届いていたのに応答だけ落ち、画面が「保存できませんでした」と出したため、
+// 社長が押し直して同じ内容が2回書かれた。読み直して比べれば防げる。
+
+test('★同じ中身なら、並び順が違っても「同じ」と見る', () => {
+  const a = [
+    { student_id: 'A', row: 1, col: 1 },
+    { student_id: 'B', row: 2, col: 3 },
+  ];
+  const b = [
+    { student_id: 'B', row: 2, col: 3 },
+    { student_id: 'A', row: 1, col: 1 },
+  ];
+  assert.equal(sameSeating(a, b), true, '並べ替えただけで「違う」と言っている');
+});
+
+test('★1人でも席が違えば「違う」と見る', () => {
+  const a = [{ student_id: 'A', row: 1, col: 1 }];
+  assert.equal(sameSeating(a, [{ student_id: 'A', row: 1, col: 2 }]), false);
+  assert.equal(sameSeating(a, [{ student_id: 'B', row: 1, col: 1 }]), false);
+});
+
+test('★人数が違えば「違う」と見る（足りない・多い の両方）', () => {
+  const a = [
+    { student_id: 'A', row: 1, col: 1 },
+    { student_id: 'B', row: 2, col: 2 },
+  ];
+  assert.equal(sameSeating(a, [{ student_id: 'A', row: 1, col: 1 }]), false);
+  assert.equal(
+    sameSeating(a, [...a, { student_id: 'C', row: 3, col: 3 }]),
+    false,
+  );
+});
+
+test('どちらも空なら「同じ」', () => {
+  assert.equal(sameSeating([], []), true);
+});
+
+test('空と1件は「違う」（0件で上書きされた状態を見逃さない）', () => {
+  assert.equal(sameSeating([], [{ student_id: 'A', row: 1, col: 1 }]), false);
+  assert.equal(sameSeating([{ student_id: 'A', row: 1, col: 1 }], []), false);
 });

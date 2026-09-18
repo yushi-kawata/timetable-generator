@@ -269,17 +269,36 @@ export default function SeatChartPage() {
     setNotice(null);
     const r = await saveSeating(day, seats);
     setSaving(false);
+
     if (!r.ok) {
-      setNotice({ kind: 'error', lines: [r.message, r.hint] });
+      // ★入ったかどうか【分からない】ときは赤で言い切らない（台帳 A4-101）。
+      //   勝手に成功にも失敗にも倒さず、そのまま「確認できませんでした」と出す。
+      const lines = [r.message, r.hint];
+      if (r.detail) lines.push(r.detail);
+      setNotice({ kind: r.kind === 'unknown' ? 'warn' : 'error', lines });
       return;
     }
+
     // 保存できた分だけ下書きから外す（他の曜日の未保存は残す）
     setDraft((d) => {
       const next = { ...d };
       delete next[day];
       return next;
     });
-    setNotice({ kind: 'ok', lines: [day + '曜日の並びを保存しました。'] });
+
+    // ★応答は落ちたが、読み直したら入っていた場合。
+    //   ここで赤を出すと先生が押し直し、【二重に書かれる】（2026-09-18 に実際に起きた）
+    setNotice(
+      r.reconciled
+        ? {
+            kind: 'ok',
+            lines: [
+              day + '曜日の並びは保存できていました。',
+              '返事が届かなかったので、読み直して確かめました。押し直さなくて大丈夫です。',
+            ],
+          }
+        : { kind: 'ok', lines: [day + '曜日の並びを保存しました。'] },
+    );
   };
 
   const pickedName = chart?.students.find((s) => s.student_id === pickedId)?.name ?? '';
