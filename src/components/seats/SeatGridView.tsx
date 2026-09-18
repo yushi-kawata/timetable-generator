@@ -87,9 +87,13 @@ export default function SeatGridView({
                   .filter(Boolean)
                   .join(' ');
 
+                // ★人がいる席には席番号を出さない（2026-09-18「すっきりしたゴシックで」）。
+                //   28マスすべてに小さな番号が入ると、それ自体が模様になって
+                //   氏名と competing する。どこの席かは行番号と並びで分かる。
+                //   ★番号は title に残してあるので、情報としては失っていない。
+                //   ★空席・名簿に無い席には、引き続き番号を出す（そこは目印が要る）。
                 const body = (
                   <>
-                    <span className="seat-pos">{pos}</span>
                     <SeatName name={student.name} />
                     {fixedCells.has(key) && <span className="seat-flag">固定席</span>}
                   </>
@@ -97,7 +101,7 @@ export default function SeatGridView({
 
                 if (!editing) {
                   return (
-                    <div key={key} className={cls}>
+                    <div key={key} className={cls} title={pos}>
                       {body}
                     </div>
                   );
@@ -107,6 +111,7 @@ export default function SeatGridView({
                     key={key}
                     type="button"
                     className={cls}
+                    title={pos}
                     aria-pressed={picked}
                     onClick={() =>
                       picked ? onPickCell(cell.row, cell.col) : onPickStudent(student.student_id)

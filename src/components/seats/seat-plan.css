@@ -21,6 +21,19 @@
 
 /* ── 平面図そのもの（1枚の図面）───────────────────────────────── */
 .seat-plan {
+  /* ★氏名だけに使う書体（台帳 A4-107 / 2026-09-18「すっきりしたゴシックで」）。
+     ・Zen Kaku Gothic New＝きちんと設計された和文ゴシック。ふところが広く、
+       画数の多い漢字でも大きく出したときに潰れない。
+     ・明朝は【選びません】。横画が細く、数メートル離れると消えるため
+       （教室で離れて読めることが最優先の条件）。丸ゴシックも同じ理由で不採用。
+     ・読み込めないときは iPad なら Hiragino Sans、Windows なら Yu Gothic UI に落ちる。
+       ★代替でも崩れない並びにしてあること。 */
+  --font-name: 'Zen Kaku Gothic New', 'Hiragino Sans', 'Yu Gothic UI', 'Yu Gothic',
+    Meiryo, system-ui, sans-serif;
+  /* ★太さ。太いほど重く見え、細いと遠くから読めない。
+     500（Medium）＝遠くから読める範囲で、いちばん軽く見えるところ。 */
+  --name-weight: 500;
+
   border: 1px solid var(--border);
   border-radius: var(--radius-sheet);
   background: var(--surface);
@@ -206,16 +219,43 @@
 
 /* 氏名。★この画面でいちばん大きい文字。遠くから読めることが最優先 */
 .seat-name {
+  /* 姓と名を【横に並べ、入らなければ折り返す】。
+     ★以前は必ず2行に割っていたが、短い氏名まで2行になって間延びしていた。
+       いまは字間（column-gap）で姓と名を分け、長い氏名だけが折り返す。 */
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: clamp(1rem, 2.4vw, 1.875rem);
-  line-height: 1.2;
-  font-weight: 700;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  column-gap: 0.35em;
+  row-gap: 0;
+
+  font-family: var(--font-name);
+  font-weight: var(--name-weight);
+  font-size: clamp(1.0625rem, 2.7vw, 2rem);
+  /* ★大きい字ほど詰める。既定のままだと字間が空いて間延びして見える */
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+  /* ★和文の字送りを字面に合わせて詰める（かな・記号のアキが均される） */
+  font-feature-settings: 'palt' 1;
   color: var(--ink);
 }
 
-.seat-name-line { display: block; }
+/* 姓・名それぞれ。★この中では折り返さない（名前の途中で切れないため） */
+.seat-name-line {
+  display: block;
+  white-space: nowrap;
+}
+
+/* ★狭い画面（電話など）では、名前の途中で折ってでも【はみ出させない】。
+   この画面が置かれるのは iPad（縦768・横1024）なので、そこでは上の nowrap が効く。
+   それより狭いところは作りの対象外だが、文字が枠から溢れて重なるのは崩れなので、
+   折り返しを許して収める（実測: 320/375 で枠外へ約20px はみ出していた）。 */
+@media (max-width: 699px) {
+  .seat-name-line {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
 
 /* 固定席・名簿に無い、などの小さな札 */
 .seat-flag {
@@ -229,7 +269,7 @@
 .seat--taken {
   border: 1px solid var(--border-strong);
   background: var(--surface);
-  box-shadow: 0 1px 0 0 var(--border);
+  /* ★影は外した。28個ぶん並ぶと、影そのものが模様になって氏名と competing する */
 }
 
 /* 空席＝細い破線だけ。塗らない（在席と同じ四角にしない） */

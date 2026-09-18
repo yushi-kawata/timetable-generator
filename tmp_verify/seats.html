@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>A4-107 座席表 描画確認</title>
+    <!-- ★本番の index.html と同じ書体の読み込み。
+         ここに無いと、確認しているのは本番と違う字面になる（2026-09-18 に実際に外した） -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500&display=swap"
+      rel="stylesheet"
+    />
     <script>
       // 端末に残った上書きを使わない状態から始める（本番と同じ条件）
       localStorage.removeItem('gas_url');

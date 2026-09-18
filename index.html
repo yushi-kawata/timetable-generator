@@ -5,6 +5,18 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>通信制高校 時間割作成ツール</title>
+    <!-- ★座席表の氏名だけに使う書体（台帳 A4-107）。
+         ・Zen Kaku Gothic New の【1ウェイトだけ】。和文は unicode-range で
+           細かく分割配信されるので、実際に落ちるのは使った字の分だけ。
+         ・display=swap ＝読み込めなくても・遅くても、先に本文が出る。
+           失敗したら下の代替（iPad は Hiragino Sans）で描かれ、崩れない。
+         ★ここを増やすときは重さを実測してから。氏名以外には使っていない。 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
     <div id="root"></div>
