@@ -11,6 +11,9 @@
 //  ?seats=violate   … 保存されている並びが決まりごとに反している状態
 //  ?seats=impossible… 決まりごと同士が矛盾している（同じ席に2人を固定）
 //  ?save=ok         … 保存の窓口が成功を返す（既定は「窓口がまだ無い」）
+//  ?flaky=N         … getSeating の最初のN回だけ 404（★A4-101 のやり直しの確認）
+//  ?saveflaky=1     … saveSeating がいつも 404（★書き込みは再送しないことの確認）
+//  ?reject=1        … getSeating が forbidden を返す（★拒否は1回でやめることの確認）
 //  ?seats=badrules  … 知らない種別・項目の足りない決まりごとが混ざっている
 //  ?seats=nogrid    … 窓口が grid を返さない
 //  ?seatDemo=1      … 窓口を叩かず見本データ（開発時の既定の使い方）
@@ -24,6 +27,8 @@ const email = 's-mihon@yushi-kokusai.jp'; // 職員の形（ハイフンあり�
 const calls: string[] = [];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).__seatCalls = calls;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(window as any).__hits = () => ({ seat: seatHits, save: saveHits });
 
 const J = (o: unknown) => new Response(JSON.stringify(o), { status: 200 });
 
@@ -205,6 +210,9 @@ function seatPayload() {
 }
 
 let seatHits = 0;
+let saveHits = 0;
+/** ★A4-101：応答の2段目が落ちた状態（404）を、最初のN回だけ再現する */
+const flaky = Number(params.get('flaky') || 0);
 
 const origFetch = window.fetch.bind(window);
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -220,13 +228,23 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 
   if (action === 'getSeating') {
     seatHits++;
-    if (kase === 'fail') return J({ error: 'forbidden', reason: 'staffOnly' });
+    // ★拒否は正しい返事。やり直さないことを確かめる
+    if (kase === 'fail' || params.get('reject') === '1') {
+      return J({ error: 'forbidden', reason: 'staffOnly' });
+    }
+    // ★最初のN回だけ 404（GASの応答の2段目が落ちている状態）
+    if (flaky > 0 && seatHits <= flaky) {
+      return new Response('not found', { status: 404 });
+    }
     if (kase === 'failafter' && seatHits > 1) return new Response('boom', { status: 500 });
     return J(seatPayload());
   }
 
   if (action === 'saveSeating') {
+    saveHits++;
     calls.push('saveSeating:' + String(body.day) + ':' + (body.seats || []).length);
+    // ★書き込みは再送されないこと（二重書きの防止）を確かめる
+    if (params.get('saveflaky') === '1') return new Response('not found', { status: 404 });
     // 既定は「窓口がまだ無い」＝本番の今の状態。?save=ok で成功を返す
     if (params.get('save') === 'ok') return J({ ok: true });
     // ★契約 v4：拒否は {"ok":false,"reason":"…"}（error ではない）

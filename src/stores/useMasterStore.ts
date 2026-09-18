@@ -6,6 +6,14 @@ import { auth, isAllowedDomain } from '../firebase';
 import { classifyRole } from '../lib/role';
 // ★窓口URLの決め方は1箇所に集約した（台帳 A4-94）。ここで localStorage を直接読まないこと
 import { resolveGasUrl } from '../lib/gasUrl';
+// ★やり直しの決まりは1か所（台帳 A4-101）。回数・秒数をここに書かないこと
+import {
+  MSG_GAS_FLAKY,
+  gasFailureDetail,
+  retryDelayMs,
+  shouldRetry,
+} from '../lib/gasRetry';
+import type { GasOutcome } from '../lib/gasRetry';
 // ★出欠の行の見つけ方は1箇所に集約してある（台帳 A4-95 / A4-99）。日付は === で比べない
 import { findAttendance } from '../lib/attendanceMatch';
 // ★連携の結果（成否＋理由）は dxResult.ts にまとめてある（台帳 A4-86）
@@ -98,6 +106,10 @@ type GasResult<T> =
  */
 export type GasErrorKind = '' | 'signin' | 'forbidden' | 'network';
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const MSG_SIGNIN = 'ログインし直してください';
 const MSG_NETWORK = '通信に失敗しました。もう一度お試しください';
 // ★裏側が {"error":"forbidden","reason":"staffOnly"} を返したとき。
@@ -124,15 +136,15 @@ async function getIdToken(): Promise<string> {
 
 // gasCall から画面の警告を出し入れするための入口。
 // useAppStore はこの下で作られるが、gasCall が呼ばれるのはストア生成後なので問題ない。
-function setGasError(message: string, kind: Exclude<GasErrorKind, ''>) {
+function setGasError(message: string, kind: Exclude<GasErrorKind, ''>, detail = '') {
   const st = useAppStore.getState();
-  if (st.gasError !== message || st.gasErrorKind !== kind) {
-    useAppStore.setState({ gasError: message, gasErrorKind: kind });
+  if (st.gasError !== message || st.gasErrorKind !== kind || st.gasErrorDetail !== detail) {
+    useAppStore.setState({ gasError: message, gasErrorKind: kind, gasErrorDetail: detail });
   }
 }
 function clearGasError() {
   if (useAppStore.getState().gasError) {
-    useAppStore.setState({ gasError: '', gasErrorKind: '' });
+    useAppStore.setState({ gasError: '', gasErrorKind: '', gasErrorDetail: '' });
   }
 }
 
@@ -165,22 +177,64 @@ async function gasCall<T>(
     return { ok: false, failure: 'signin', reason: 'signin' };
   }
 
-  let json: unknown;
-  try {
-    const res = await fetch(gasUrl, {
-      method: 'POST',
-      // ★headers は付けない（プリフライト回避）。mode も指定しない
-      body: JSON.stringify({ action, idToken, ...payload }),
-      redirect: 'follow',
-    });
-    if (!res.ok) {
-      setGasError(MSG_NETWORK, 'network');
-      return { ok: false, failure: 'network', reason: `http${res.status}` };
+  // ── ★やり直しつきで叩く（台帳 A4-101）──────────────────────────
+  //   2026-09-18 の症状＝画面が断続的に「通信に失敗しました」。
+  //   コンソールに script.googleusercontent.com（GASの応答の2段目）への 404 が6件。
+  //   ＝画面が読み込み時に叩く窓口の数ぶん出ていた。窓口そのものは生きていた。
+  //   こちらは正しく叩いているのに返事が返らない種類の失敗なので、少し待ってやり直す。
+  //
+  //   ★★やり直すのは【読み取りだけ】（lib/gasRetry.ts の表が正本）。
+  //     ・拒否（unauthorized / forbidden）はやり直さない＝正しい返事なので無駄
+  //     ・書き込み（saveStudents・checkIn など）はやり直さない＝二重に書く恐れ
+  //     ここに回数や秒数を直接書かないこと。
+  let json: unknown = null;
+  let lastStatus: number | null = null;
+  let attempts = 0;
+  let outcome: GasOutcome = 'ok';
+
+  for (;;) {
+    attempts++;
+    outcome = 'ok';
+    try {
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        // ★headers は付けない（プリフライト回避）。mode も指定しない
+        body: JSON.stringify({ action, idToken, ...payload }),
+        redirect: 'follow',
+      });
+      lastStatus = res.status;
+      if (!res.ok) {
+        outcome = 'httpError';
+      } else {
+        try {
+          json = await res.json();
+        } catch {
+          // 空の返事もここに来る（A4-101 で実際に起きている形）
+          outcome = 'badJson';
+        }
+      }
+    } catch {
+      outcome = 'networkError';
+      lastStatus = null;
     }
-    json = await res.json();
-  } catch {
-    setGasError(MSG_NETWORK, 'network');
-    return { ok: false, failure: 'network', reason: 'fetch' };
+
+    if (outcome === 'ok') break;
+    if (!shouldRetry({ action, outcome, attempt: attempts })) break;
+    await sleep(retryDelayMs(attempts));
+  }
+
+  if (outcome !== 'ok') {
+    // ★何が起きたかを帯に出す（番号・回数・窓口の末尾）。切り分けを速くするため
+    setGasError(
+      MSG_GAS_FLAKY,
+      'network',
+      gasFailureDetail({ status: lastStatus, attempts, url: gasUrl }),
+    );
+    return {
+      ok: false,
+      failure: 'network',
+      reason: lastStatus ? `http${lastStatus}` : outcome,
+    };
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -262,6 +316,11 @@ interface AppState {
   gasError: string;
   /** その文言が「ログインの話」か「権限の話」か「通信の話」か */
   gasErrorKind: GasErrorKind;
+  /**
+   * 切り分け用の1行（★台帳 A4-101）。例: 「応答 404／3 回試しました／窓口 …abc/exec」
+   * ★2026-09-18 に、この情報が画面に無いせいで切り分けに20分かかった。
+   */
+  gasErrorDetail: string;
 
   clearGasError: () => void;
 
@@ -318,6 +377,7 @@ export const useAppStore = create<AppState>()(
       gasUrl: currentGasUrl(),
       gasError: '',
       gasErrorKind: '',
+      gasErrorDetail: '',
 
       clearGasError: () => set({ gasError: '', gasErrorKind: '' }),
 

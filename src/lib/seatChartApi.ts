@@ -18,6 +18,14 @@ import { auth, isAllowedDomain } from '../firebase';
 import { currentGasUrl } from '../stores/useMasterStore';
 import { normalizeSeatChart } from './seatChart';
 import { constraintIssues, normalizeConstraints } from './seatAssign';
+// ★やり直しの決まりは1か所（台帳 A4-101）。ここに秒数や回数を書かないこと
+import {
+  MSG_GAS_FLAKY,
+  gasFailureDetail,
+  retryDelayMs,
+  shouldRetry,
+} from './gasRetry';
+import type { GasOutcome } from './gasRetry';
 import type { SeatConstraints } from './seatAssign';
 import type { Seat, SeatChart } from './seatChart';
 import type { DayOfWeek } from '../types/master';
@@ -64,6 +72,10 @@ export type SeatSaveResult =
 
 const MSG_FAILED = '座席表を取得できませんでした';
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * 見本データを使うか。
  * ★本番のビルドでは常に false（import.meta.env.DEV が false に畳まれる）。
@@ -109,24 +121,58 @@ export async function fetchSeatChart(search: string): Promise<SeatChartFetch> {
   }
   if (!idToken) return { ok: false, message: MSG_FAILED, hint: 'ログインし直してください' };
 
-  let json: unknown;
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      body: JSON.stringify({ action: SEAT_CHART_ACTION, idToken }),
-      redirect: 'follow',
-    });
-    if (!res.ok) {
-      return { ok: false, message: MSG_FAILED, hint: '通信の状態を確かめて、もう一度お試しください' };
+  // ── ★やり直しつきで叩く（台帳 A4-101）──────────────────────────
+  //   GAS の応答の2段目（script.googleusercontent.com）が落ちて 404 が返ることがある。
+  //   窓口そのものは生きているので、少し待ってもう一度叩けば通る。
+  //   ★拒否（unauthorized / forbidden）はやり直さない＝正しい返事なので無駄。
+  let json: unknown = null;
+  let lastStatus: number | null = null;
+  let attempts = 0;
+  let outcome: GasOutcome = 'ok';
+
+  for (;;) {
+    attempts++;
+    outcome = 'ok';
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        body: JSON.stringify({ action: SEAT_CHART_ACTION, idToken }),
+        redirect: 'follow',
+      });
+      lastStatus = res.status;
+      if (!res.ok) {
+        outcome = 'httpError';
+      } else {
+        try {
+          json = await res.json();
+        } catch {
+          // 空の返事もここに来る（A4-101 で実際に起きている形）
+          outcome = 'badJson';
+        }
+      }
+    } catch {
+      outcome = 'networkError';
+      lastStatus = null;
     }
-    json = await res.json();
-  } catch {
-    return { ok: false, message: MSG_FAILED, hint: '通信の状態を確かめて、もう一度お試しください' };
+
+    if (outcome === 'ok') break;
+    if (!shouldRetry({ action: SEAT_CHART_ACTION, outcome, attempt: attempts })) break;
+    await sleep(retryDelayMs(attempts));
+  }
+
+  if (outcome !== 'ok') {
+    // ★何が起きたかを画面に出す（番号・回数・窓口の末尾）。切り分けを速くするため
+    return {
+      ok: false,
+      message: MSG_FAILED,
+      hint: MSG_GAS_FLAKY + '（' + gasFailureDetail({ status: lastStatus, attempts, url }) + '）',
+    };
   }
 
   // ★配列かどうかより先に error を見る（拒否を「0件」と読み違えないため）
   const err = (json as { error?: unknown } | null)?.error;
   if (err) {
+    // ★ここから先は【正しい返事】。やり直さない
     const reason = String((json as { reason?: unknown }).reason || err);
     if (err === 'unauthorized') {
       return { ok: false, message: MSG_FAILED, hint: 'ログインし直してください' };
@@ -167,6 +213,12 @@ export async function fetchSeatChart(search: string): Promise<SeatChartFetch> {
  * その曜日の並びを保存する。
  * ★押すまで保存されません（画面側が「未保存」を出すこと）。
  * ★失敗を成功に見せないこと。裏側が ok を返したときだけ成功にします。
+ *
+ * ★★【やり直しません】（台帳 A4-101）。
+ *   書き込みは、届いたかどうか分からない状態で送り直すと【二重に書く】恐れがあります。
+ *   読み取り（getSeating）だけがやり直しの対象です。
+ *   保存のやり直しが要るなら、二重に書かない仕組み（受付番号など）とセットで
+ *   設計すること。ここに for ループを足さないこと。
  */
 export async function saveSeating(day: DayOfWeek, seats: Seat[]): Promise<SeatSaveResult> {
   if (isSeatDemo(window.location.search)) {

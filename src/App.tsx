@@ -31,6 +31,8 @@ export function AppInner() {
   const fetchAll = useAppStore((s) => s.fetchAll);
   const gasError = useAppStore((s) => s.gasError);
   const gasErrorKind = useAppStore((s) => s.gasErrorKind);
+  // ★切り分け用の1行（台帳 A4-101）。応答の番号・試した回数・窓口の末尾
+  const gasErrorDetail = useAppStore((s) => s.gasErrorDetail);
   const clearGasError = useAppStore((s) => s.clearGasError);
 
   const [mode, setMode] = useState<Mode>('student');
@@ -264,6 +266,20 @@ export function AppInner() {
                   ? '通信の状態を確かめて、もう一度お試しください。'
                   : 'ログインの有効期限が切れている場合があります。一度ログアウトして、学校のアカウントで入り直してください。'}
             </span>
+            {/* ★何が起きたかを出す（台帳 A4-101）。
+                2026-09-18 は、この1行が無いせいで切り分けに20分かかった。
+                先生が読んでそのまま伝えられる形にしてある。 */}
+            {gasErrorDetail && (
+              <span
+                className={
+                  gasErrorKind === 'forbidden'
+                    ? 'block text-[11px] text-amber-700/80 mt-1 numeric break-all'
+                    : 'block text-[11px] text-red-600/80 mt-1 numeric break-all'
+                }
+              >
+                {gasErrorDetail}
+              </span>
+            )}
           </div>
           <button
             onClick={clearGasError}
