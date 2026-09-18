@@ -1,0 +1,280 @@
+/* ==========================================================================
+   教室表示モードの枠（台帳 A4-119）
+   ==========================================================================
+   置かれる場所: 教室の iPad（縦 768×1024／横 1024×768）を1台、置きっぱなし。
+   見る人: 教室の中の生徒。★数メートル離れたところから見ます。
+
+   考え方:
+     1. 画面いっぱいに使う。ヘッダーも余白も最小限
+        （通常の座席表はカードの中に置くが、この画面は「掲示物」なので枠を外す）
+     2. 席の意匠は通常の座席表と同じ（seat-plan.css）。★別物に見せない
+     3. 操作子は1つも無い。＝押せそうに見える形（影・角丸の塗り・手の形）を使わない
+     4. 高さが余ったら席を広げる（iPad の画面を埋める）
+
+   ★色・余白はすべて既存のトークン（index.css の :root）を使うこと。
+   ========================================================================== */
+
+.classroom {
+  /* ★画面の高さいっぱい。dvh は iPad Safari の上下バーの分を引いてくれる */
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 16px;
+  background: var(--page);
+  color: var(--ink);
+}
+
+@media (min-width: 700px) {
+  .classroom {
+    gap: 16px;
+    padding: 18px 24px 24px;
+  }
+}
+
+/* ── 見出しの帯 ───────────────────────────────────────────────── */
+.classroom-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px 20px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  /* 通常の座席表と同じ「太い1本」で、見出しと図面を分ける */
+  border-bottom: 2px solid var(--ink);
+}
+
+.classroom-head-left,
+.classroom-head-right {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.classroom-head-right {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.classroom-room {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+@media (min-width: 700px) {
+  .classroom-room { font-size: 1.25rem; }
+}
+
+.classroom-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--ink3);
+}
+
+/* 日付＝この画面でいちばん大事な「いつの話か」。氏名の次に大きく */
+.classroom-date {
+  font-size: 1.125rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (min-width: 700px) {
+  .classroom-date { font-size: 1.5rem; }
+}
+
+.classroom-asof {
+  font-size: 0.75rem;
+  color: var(--ink3);
+  text-align: right;
+}
+
+/* ── 本体。余った高さは席に配る ───────────────────────────────── */
+.classroom-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.classroom-plan {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 曜日の帯。★選ぶ操作子ではない（今日の曜日が出るだけ） */
+.classroom-day-band {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+/* 教卓。★見出し帯のものより控えめ（この画面の主役は氏名） */
+.classroom-desk {
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 20px;
+}
+
+.classroom-desk .seat-desk-label {
+  font-size: 0.875rem;
+}
+
+.classroom-day {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ink);
+  border-bottom: 3px solid var(--accent);
+  padding-bottom: 2px;
+}
+
+@media (min-width: 700px) {
+  .classroom-day { font-size: 1.625rem; }
+}
+
+.classroom-day-note {
+  font-size: 0.875rem;
+  color: var(--ink2);
+}
+
+/* ★席の並びに、余った高さを配る（iPad の画面を埋める）。
+   .seat-plan-body / .seat-row は通常の座席表と共通の部品。
+   ここでは「伸びてよい」ことだけを足している。 */
+.classroom-plan .seat-plan-body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.classroom-plan .seat-row {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+/* ── 伏せた状態。★氏名は【描かない】（隠すのではなく出さない）──── */
+.classroom-mask {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sheet);
+  background: var(--surface2);
+  color: var(--ink2);
+}
+
+.classroom-mask-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.classroom-mask-note {
+  font-size: 1rem;
+}
+
+/* ── お知らせの面（授業が無い日・読み込み中・失敗）──────────────── */
+.classroom-panel {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+  background: var(--surface);
+  text-align: center;
+}
+
+.classroom-panel--error {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.classroom-panel-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+}
+
+@media (min-width: 700px) {
+  .classroom-panel-title { font-size: 1.75rem; }
+}
+
+.classroom-panel-line {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: inherit;
+}
+
+.classroom-panel:not(.classroom-panel--error) .classroom-panel-line {
+  color: var(--ink2);
+}
+
+/* ── 席が決まっていない人 ─────────────────────────────────────── */
+.classroom-unseated {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+}
+
+.classroom-unseated-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ink3);
+  white-space: nowrap;
+}
+
+.classroom-unseated-names {
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+/* ── 足元 ─────────────────────────────────────────────────────── */
+.classroom-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 0.75rem;
+  color: var(--ink3);
+}
+
+.classroom-foot-warn {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.classroom-foot-note {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}

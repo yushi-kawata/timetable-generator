@@ -13,7 +13,7 @@
 //  8. ★自動配置は押すたびに別の案を出す（もとの「水曜日①②」の代わり）。
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DayOfWeek } from '../../types/master';
-import { SEAT_MASK_IDLE_MS, buildSeatGrid, moveSeat, weekdayOf } from '../../lib/seatChart';
+import { SEAT_MASK_IDLE_MS, SEAT_ROOM_NAME, buildSeatGrid, moveSeat, weekdayOf } from '../../lib/seatChart';
 import type { Seat, SeatChart } from '../../lib/seatChart';
 import { autoAssign, checkSoftWishes, countConstraints, findViolations } from '../../lib/seatAssign';
 import type { SeatConstraints, Violation } from '../../lib/seatAssign';
@@ -25,8 +25,11 @@ import ConstraintDraft from './ConstraintDraft';
 // ★この画面の意匠はここ1枚にまとめてある（index.css には入れない）
 import './seat-plan.css';
 
-/** 対象の教室。★他の学習センター・他教室には広げない（社長決裁 C-5） */
-const ROOM_NAME = 'A教室（2年）';
+/**
+ * 対象の教室。★正本は lib/seatChart.ts の SEAT_ROOM_NAME（教室表示モードと共通）。
+ *   ★ここに文字列を書き戻さないこと。片方だけ直すと同じ教室が別名で出る。
+ */
+const ROOM_NAME = SEAT_ROOM_NAME;
 
 /**
  * 伏せるまでの時間。★本番の値は lib/seatChart.ts の SEAT_MASK_IDLE_MS 1か所だけ。

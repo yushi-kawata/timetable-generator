@@ -24,6 +24,40 @@ export const SEAT_DAYS: DayOfWeek[] = ['月', '火', '水', '木', '金'];
  */
 export const SEAT_MASK_IDLE_MS = 5 * 60 * 1000;
 
+// ──────────────────────────────────────────────────────────────────────────
+// ★教室表示モード（台帳 A4-119）の決まりごと
+// ──────────────────────────────────────────────────────────────────────────
+// 教室の iPad に置きっぱなしにする画面です。誰も見ていない時間が長く、
+// 職員アカウントで入れたまま置くことになるので、通常の座席表とは別の値にします。
+
+/**
+ * ★教室表示モードで伏せるまでの時間＝【1分】（社長決裁(4)／2026-09-18）。
+ *
+ * ★★上の SEAT_MASK_IDLE_MS（通常の座席表＝5分）とは【別の定数】です。
+ *   通常の座席表は5分のままにすること。片方を直してももう片方は動きません。
+ *   ここを長くすると、先生が離席した教室で氏名が出続けます。
+ */
+export const CLASSROOM_MASK_IDLE_MS = 60 * 1000;
+
+/**
+ * 教室表示モードで自動的に読み直す間隔。
+ * ★この画面には操作子が1つもありません（見るだけ）。＝【人は読み直せません】。
+ *   朝に開いたまま1日置くので、時計が読み直します。
+ * ★読み直したら「いつのデータか」を必ず画面に出すこと（そうでないと、
+ *   古い表を新しいと思って見ることになる）。
+ */
+export const CLASSROOM_RELOAD_MS = 10 * 60 * 1000;
+
+/**
+ * ★取りに行って失敗したときだけ、短い間隔で試し直す。
+ *   誰も見ていないときに失敗するので、人が押し直すことを当てにできない。
+ *   ★失敗している間は【古い座席表を出し続けない】（画面から消す）。
+ */
+export const CLASSROOM_RETRY_MS = 60 * 1000;
+
+/** 日付と時計を見に行く間隔（★日付が変わったら曜日も変わるため） */
+export const CLASSROOM_TICK_MS = 30 * 1000;
+
 /**
  * 教室の広さの【控えの値】（縦の行数 × 横の列数）。
  * ★正本は窓口が返す grid（契約 v4 の {"rows":4,"cols":7}）です。ここは窓口が
@@ -32,6 +66,13 @@ export const SEAT_MASK_IDLE_MS = 5 * 60 * 1000;
  */
 export const SEAT_ROWS_FALLBACK = 4;
 export const SEAT_COLS_FALLBACK = 7;
+
+/**
+ * 対象の教室。★他の学習センター・他教室には広げない（社長決裁 C-5）。
+ * ★2つの画面（通常の座席表・教室表示モード）が同じ名前を出すように、
+ *   ここ1か所に置いてある。片方だけ直すと、同じ教室が別名で出る。
+ */
+export const SEAT_ROOM_NAME = 'A教室（2年）';
 
 /** 画面が持ってよい生徒の情報。これ以上増やさないこと */
 export type SeatStudent = {
@@ -400,4 +441,67 @@ export function weekdayOf(d: Date): DayOfWeek | null {
   const i = d.getDay();                 // 0=日
   if (i < 1 || i > 5) return null;
   return SEAT_DAYS[i - 1];
+}
+
+/** 曜日の札（0=日）。★weekdayOf が返さない土日も、画面に出すために必要 */
+const JP_WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+
+/** 「9月18日」の形。★年は出さない（教室の iPad は今日しか見ない） */
+export function seatDateLabel(d: Date): string {
+  return d.getMonth() + 1 + '月' + d.getDate() + '日';
+}
+
+/**
+ * 教室表示モードが「今日どう出すか」。
+ *
+ * ★★先生が曜日を選び直さなくてよいこと（毎朝そのまま見るもの）。
+ * ★★月〜金でない日に【黙って月曜を出さない】こと（社長指示 2026-09-18）。
+ *    黙って月曜を出すと、月曜の朝に「これは今日の分か、土曜に出ていたものか」が
+ *    誰にも見分けられなくなる。
+ *
+ * 返すもの:
+ *   kind:'class'  … 月〜金。その曜日の座席表を出す
+ *   kind:'offday' … 土日。★座席表そのものを出さない（氏名を1つも描かない）。
+ *                   「今日は授業がありません」と、次の登校日を文字で添えるだけ。
+ *
+ * ★祝日は判定できません（画面側に休校日の一覧が無く、窓口も返していないため）。
+ *   祝日は月〜金として扱われ、その曜日の座席表が出ます。
+ *   ★休校日を扱うなら、窓口（GAS）が返す形を決めるところから＝別案件。
+ *     ここに祝日の一覧を書き写さないこと（毎年ずれて、誰も気づけなくなる）。
+ */
+export type ClassroomToday =
+  | { kind: 'class'; day: DayOfWeek; dateLabel: string; weekdayLabel: string }
+  | {
+      kind: 'offday';
+      dateLabel: string;
+      weekdayLabel: string;
+      /** 次に授業がある曜日 */
+      nextDay: DayOfWeek;
+      /** 次に授業がある日（「9月21日」） */
+      nextDateLabel: string;
+    };
+
+export function classroomToday(now: Date): ClassroomToday {
+  const dateLabel = seatDateLabel(now);
+  const weekdayLabel = JP_WEEKDAY_LABELS[now.getDay()];
+  const day = weekdayOf(now);
+  if (day) return { kind: 'class', day, dateLabel, weekdayLabel };
+
+  // 土日。★次の月〜金を探す（★渡された Date は書き換えない）
+  const probe = new Date(now.getTime());
+  for (let i = 0; i < 7; i++) {
+    probe.setDate(probe.getDate() + 1);
+    const next = weekdayOf(probe);
+    if (next) {
+      return {
+        kind: 'offday',
+        dateLabel,
+        weekdayLabel,
+        nextDay: next,
+        nextDateLabel: seatDateLabel(probe),
+      };
+    }
+  }
+  // ここには来ない（7日あれば必ず月〜金がある）。念のため月曜を返す
+  return { kind: 'offday', dateLabel, weekdayLabel, nextDay: '月', nextDateLabel: '' };
 }

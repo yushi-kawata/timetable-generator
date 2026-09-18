@@ -50,9 +50,19 @@ test('★行き先 → URL → 行き先 が往復で一致する（表が2つ�
   }
 });
 
-test('画面は5つ。★足したときに、この数と下の職員判定の両方を直させる', () => {
-  assert.equal(ROUTE_NAMES.length, 5);
-  assert.deepEqual([...ROUTE_NAMES].sort(), ['admin', 'health', 'seats', 'student', 'teacher']);
+test('画面は6つ。★足したときに、この数と下の職員判定の両方を直させる', () => {
+  assert.equal(ROUTE_NAMES.length, 6);
+  assert.deepEqual(
+    [...ROUTE_NAMES].sort(),
+    ['admin', 'classroom', 'health', 'seats', 'student', 'teacher'],
+  );
+});
+
+test('★教室表示モードは専用のURL（台帳 A4-119）', () => {
+  assert.equal(parseRoute('#/seats/classroom'), 'classroom');
+  assert.equal(ROUTE_HASH.classroom, '#/seats/classroom');
+  // ★通常の座席表とは別の行き先（同じ画面に落ちない）
+  assert.notEqual(parseRoute('#/seats/classroom'), parseRoute('#/seats'));
 });
 
 test('大文字・末尾のスラッシュ・ハッシュ内のクエリでも同じ場所に着く', () => {
@@ -64,10 +74,11 @@ test('大文字・末尾のスラッシュ・ハッシュ内のクエリでも�
 
 /* ── 3. 職員専用かどうか ────────────────────────────────────────── */
 
-test('★職員専用の画面が3つとも「専用」になっている（ここが false になると誰でも開ける）', () => {
+test('★職員専用の画面が4つとも「専用」になっている（ここが false になると誰でも開ける）', () => {
   assert.equal(STAFF_ONLY.teacher, true, '教員用ページが職員専用から外れている');
   assert.equal(STAFF_ONLY.admin, true, '生徒マスターが職員専用から外れている');
   assert.equal(STAFF_ONLY.seats, true, '座席表が職員専用から外れている');
+  assert.equal(STAFF_ONLY.classroom, true, '教室表示モードが職員専用から外れている');
 });
 
 test('生徒が使う画面は職員専用にしない（生徒が開けなくなる）', () => {

@@ -5,6 +5,9 @@ import AdminPage from './components/admin/AdminPage';
 import HealthCheckPage from './components/health/HealthCheckPage';
 // ★教室の座席表（台帳 A4-107）。福岡GCの教室だけ。入口は職員にだけ出す
 import SeatChartPage from './components/seats/SeatChartPage';
+// ★教室表示モード（台帳 A4-119）。専用URL（#/seats/classroom）でだけ入る。
+//   ★この画面には他の画面へ行く道を1つも描かない（下の return より手前で返す）。
+import ClassroomSeatView from './components/seats/ClassroomSeatView';
 import LoginGate from './components/auth/LoginGate';
 import { NotFoundNotice, StaffOnlyNotice } from './components/nav/RouteNotice';
 import { AuthProvider } from './hooks/useAuth';
@@ -43,10 +46,18 @@ export function AppInner() {
   //   ハッシュが無い＝これまでのブックマーク＝生徒用に着きます。
   const { route } = useRoute();
 
+  // ★教室表示モードか（台帳 A4-119）。専用URLで入ったときだけ true
+  const isClassroom = route === 'classroom';
+
   // ★ログインが済んでから取りに行く（未ログインで叩かない）
+  //   ★教室表示モードでは取りに行きません。置きっぱなしの iPad に
+  //     名簿（氏名・メール・パスワードの有無）や時間割マスタを降ろさないため。
+  //     この画面が使うのは座席表の窓口だけです（ClassroomSeatView が自分で叩く）。
   useEffect(() => {
-    if (user) fetchAll();
-  }, [user, fetchAll]);
+    if (!user) return;
+    if (isClassroom) return;
+    fetchAll();
+  }, [user, fetchAll, isClassroom]);
 
   // ★入っている人が変わったら、表示中のページを必ず生徒用に戻す。
   //   これをしないと、同じ端末で入り直した次の人が
@@ -153,6 +164,15 @@ export function AppInner() {
         <StaffOnlyNotice onGoStudent={() => goTo('student')} />
       </div>
     );
+  }
+
+  // ── ★教室表示モード（台帳 A4-119）───────────────────────────────
+  // ★ここで返します。この下のヘッダー（戻る・他の画面への入口・ログアウト）を
+  //   1つも描かないためです。＝この画面から他へ行く道は0本。
+  // ★★画面側だけでは守れません。生徒が URL を打ち替えれば戻れます。
+  //   iPad の【アクセスガイド】で Safari から出られなくして、初めて成立します。
+  if (route === 'classroom') {
+    return <ClassroomSeatView />;
   }
 
   return (

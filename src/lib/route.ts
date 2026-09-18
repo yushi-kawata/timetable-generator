@@ -32,10 +32,17 @@
 //     1件も降りてきません）。それでも画面側でも止めます。
 
 /** 行き先の名前。★画面を足したら、下の2つの表にも必ず足すこと（型が守ります） */
-export type RouteName = 'student' | 'health' | 'teacher' | 'admin' | 'seats';
+export type RouteName = 'student' | 'health' | 'teacher' | 'admin' | 'seats' | 'classroom';
 
 /** 並び順つきの一覧（試験が全部の行き先を回るために使う） */
-export const ROUTE_NAMES: RouteName[] = ['student', 'health', 'teacher', 'admin', 'seats'];
+export const ROUTE_NAMES: RouteName[] = [
+  'student',
+  'health',
+  'teacher',
+  'admin',
+  'seats',
+  'classroom',
+];
 
 /**
  * 行き先 → URL のハッシュ。
@@ -48,6 +55,10 @@ export const ROUTE_HASH: Record<RouteName, string> = {
   teacher: '#/teacher',
   admin: '#/admin',
   seats: '#/seats',
+  // ★教室表示モード（台帳 A4-119）。教室の iPad に置きっぱなしにする画面。
+  //   ★この URL は画面のどこからもリンクしません（社長決裁(2)＝専用のURL・
+  //     画面上に切り替えを置かない）。iPad にこの URL を直接ブックマークします。
+  classroom: '#/seats/classroom',
 };
 
 /**
@@ -65,6 +76,9 @@ export const STAFF_ONLY: Record<RouteName, boolean> = {
   teacher: true,
   admin: true,
   seats: true,
+  // ★教室表示モードも職員だけ（氏名が並ぶ画面なので、生徒の URL からは開かせない）。
+  //   ★守りの本体は iPad 側の「アクセスガイド」です。ここは画面側の一枚目にすぎません。
+  classroom: true,
 };
 
 /**
@@ -83,6 +97,7 @@ const PATH_TO_ROUTE: Record<string, RouteName> = {
   teacher: 'teacher',
   admin: 'admin',
   seats: 'seats',
+  'seats/classroom': 'classroom',
 };
 
 export function parseRoute(hash: string): RouteName | null {
