@@ -27,7 +27,11 @@ import '../src/index.css';
 
 const params = new URLSearchParams(location.search);
 const kase = params.get('seats') || 'ok';
-const email = 's-mihon@yushi-kokusai.jp'; // 職員の形（ハイフンあり）。実在の人ではない
+// ★どちらの立場で入るか（台帳 A4-120 の確認用）。
+//   ?as=student … 生徒の形（英字1文字＋数字8桁）。★実在しない番号（9で始める）
+//   既定        … 職員の形（ハイフンあり）。実在の人ではない
+const email =
+  params.get('as') === 'student' ? 's99000001@yushi-kokusai.jp' : 's-mihon@yushi-kokusai.jp';
 
 const calls: string[] = [];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

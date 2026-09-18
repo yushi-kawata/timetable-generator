@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import StudentPage from './components/student/StudentPage';
 import TeacherPage from './components/teacher/TeacherPage';
 import AdminPage from './components/admin/AdminPage';
@@ -6,12 +6,16 @@ import HealthCheckPage from './components/health/HealthCheckPage';
 // ★教室の座席表（台帳 A4-107）。福岡GCの教室だけ。入口は職員にだけ出す
 import SeatChartPage from './components/seats/SeatChartPage';
 import LoginGate from './components/auth/LoginGate';
+import { NotFoundNotice, StaffOnlyNotice } from './components/nav/RouteNotice';
 import { AuthProvider } from './hooks/useAuth';
 import { useAuth } from './hooks/auth-context';
+// ★画面の行き先は URL のハッシュで決まる（台帳 A4-120）。
+//   行き先の一覧・職員専用かどうかの判定は lib/route.ts が正本。
+//   ★ここに行き先を書き足さないこと。
+import { goTo, replaceWith, useRoute } from './hooks/useRoute';
+import { isStaffRoute } from './lib/route';
 import { useAppStore } from './stores/useMasterStore';
 import { classifyRole } from './lib/role';
-
-type Mode = 'student' | 'teacher' | 'admin' | 'health' | 'seats';
 
 export default function App() {
   return (
@@ -35,7 +39,9 @@ export function AppInner() {
   const gasErrorDetail = useAppStore((s) => s.gasErrorDetail);
   const clearGasError = useAppStore((s) => s.clearGasError);
 
-  const [mode, setMode] = useState<Mode>('student');
+  // ★いまの行き先は URL のハッシュ（台帳 A4-120）。
+  //   ハッシュが無い＝これまでのブックマーク＝生徒用に着きます。
+  const { route } = useRoute();
 
   // ★ログインが済んでから取りに行く（未ログインで叩かない）
   useEffect(() => {
@@ -45,14 +51,15 @@ export function AppInner() {
   // ★入っている人が変わったら、表示中のページを必ず生徒用に戻す。
   //   これをしないと、同じ端末で入り直した次の人が
   //   「教員用ページが開いたまま」の状態を引き継いでしまう。
-  //   （React の「レンダー中に前の値と比べて state を直す」書き方。
-  //     useEffect でやるより1回描き直す回数が少なくて済む）
+  //   ★履歴は【差し替える】（replaceWith）。積むと、次の人が戻るボタンで
+  //     前の人の画面を開けてしまう。
   const uid = user?.uid ?? null;
-  const [prevUid, setPrevUid] = useState<string | null>(uid);
-  if (uid !== prevUid) {
-    setPrevUid(uid);
-    setMode('student');
-  }
+  const prevUidRef = useRef<string | null>(uid);
+  useEffect(() => {
+    if (prevUidRef.current === uid) return;
+    prevUidRef.current = uid;
+    replaceWith('student');
+  }, [uid]);
 
   const handleLogout = async () => {
     clearGasError();
@@ -127,6 +134,27 @@ export function AppInner() {
     );
   }
 
+  // ── ★行き先の番人（台帳 A4-120）─────────────────────────────────
+  // URL で画面を分けたので、【URL を知っていれば誰でも打ち込めます】。
+  // ★そのため、開いた時点でここを通します。「ボタンを隠す」だけでは足りません。
+  // ★守りは二重です。窓口（GAS）も生徒を拒否するので、画面が開けてもデータは
+  //   1件も降りてきません。それでも画面側でも止めます。
+  // ★真っ白にしない／エラーだけ出して放り出さない。必ず行ける場所を添えます。
+  if (route === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <NotFoundNotice onGoStudent={() => goTo('student')} />
+      </div>
+    );
+  }
+  if (isStaffRoute(route) && !isStaff) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <StaffOnlyNotice onGoStudent={() => goTo('student')} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen">
       {/* ヘッダー */}
@@ -141,46 +169,46 @@ export function AppInner() {
           </h1>
           <span
             className={`text-[11px] font-bold px-3 py-1 rounded-full tracking-wide whitespace-nowrap ${
-              mode === 'student'
+              route === 'student'
                 ? 'bg-green-400 text-green-900'
-                : mode === 'health'
+                : route === 'health'
                   ? 'bg-rose-400 text-rose-900'
-                  : mode === 'seats'
+                  : route === 'seats'
                     ? 'bg-sky-300 text-sky-900'
                     : 'bg-amber-400 text-amber-900'
             }`}
           >
-            {mode === 'student'
+            {route === 'student'
               ? '生徒用'
-              : mode === 'health'
+              : route === 'health'
                 ? '健康観察'
-                : mode === 'seats'
+                : route === 'seats'
                   ? '座席表'
                   : '教員用'}
           </span>
         </div>
         <div className="flex gap-3 text-sm items-center flex-wrap">
           {/* ★座席表は下の「← 戻る」を使う。ここを除外しないと戻るボタンが2つ並ぶ */}
-          {mode !== 'student' && mode !== 'health' && mode !== 'seats' && (
+          {route !== 'student' && route !== 'health' && route !== 'seats' && (
             <button
-              onClick={() => setMode('student')}
+              onClick={() => goTo('student')}
               className="text-white/60 hover:text-white"
             >
               ← 生徒用に戻る
             </button>
           )}
-          {(mode === 'health' || mode === 'seats') && (
+          {(route === 'health' || route === 'seats') && (
             <button
-              onClick={() => setMode('student')}
+              onClick={() => goTo('student')}
               className="text-white/60 hover:text-white"
             >
               ← 戻る
             </button>
           )}
-          {mode === 'student' && (
+          {route === 'student' && (
             <>
               <button
-                onClick={() => setMode('health')}
+                onClick={() => goTo('health')}
                 className="text-white/60 hover:text-white"
               >
                 🏥 健康観察
@@ -192,7 +220,7 @@ export function AppInner() {
                   氏名が並ぶので生徒の入口には置かない。 */}
               {isStaff && (
                 <button
-                  onClick={() => setMode('seats')}
+                  onClick={() => goTo('seats')}
                   className="text-white/60 hover:text-white"
                 >
                   🪑 座席表
@@ -200,7 +228,7 @@ export function AppInner() {
               )}
               {isStaff && (
                 <button
-                  onClick={() => setMode('admin')}
+                  onClick={() => goTo('admin')}
                   className="text-white/60 hover:text-white"
                 >
                   教員用ページ →
@@ -208,16 +236,16 @@ export function AppInner() {
               )}
             </>
           )}
-          {(mode === 'teacher' || mode === 'admin') && (
+          {(route === 'teacher' || route === 'admin') && (
             <>
               <button
-                onClick={() => setMode('seats')}
+                onClick={() => goTo('seats')}
                 className="text-white/60 hover:text-white"
               >
                 🪑 座席表
               </button>
               <button
-                onClick={() => setMode('health')}
+                onClick={() => goTo('health')}
                 className="text-white/60 hover:text-white"
               >
                 🏥 健康観察
@@ -300,12 +328,12 @@ export function AppInner() {
 
       {/* メインコンテンツ */}
       <main className="max-w-[1050px] mx-auto px-4 sm:px-5 py-7 pb-16">
-        {mode === 'student' && <StudentPage />}
-        {mode === 'teacher' && <TeacherPage />}
-        {mode === 'admin' && <AdminPage goTeacher={() => setMode('teacher')} />}
+        {route === 'student' && <StudentPage />}
+        {route === 'teacher' && <TeacherPage />}
+        {route === 'admin' && <AdminPage goTeacher={() => goTo('teacher')} />}
         {/* ★座席表（台帳 A4-107）。窓口・見本データの切り替えは lib/seatChartApi.ts 側。
             ここでは出し分けだけを行う（守りは裏側）。 */}
-        {mode === 'seats' && <SeatChartPage />}
+        {route === 'seats' && <SeatChartPage />}
         {/* ★2026-09-09（社長決裁・案B）: 健康観察の教員確認も、合言葉ではなく
             Googleログイン＋役割判定（isStaff）で通します。
             ・合言葉 teacher1234 は【公開バンドルに文字列で載っていて誰でも読めます】。
@@ -318,7 +346,7 @@ export function AppInner() {
             ★HealthCheckPage の中身は触っていません。渡す値を変えただけです。
               保健側の窓口（GAS）には番人が入っていません（台帳 A4-72）。
               画面の出し分けは守りではないので、窓口の手当ては別案件のままです。 */}
-        {mode === 'health' && <HealthCheckPage isTeacher={isStaff} />}
+        {route === 'health' && <HealthCheckPage isTeacher={isStaff} />}
       </main>
     </div>
   );
