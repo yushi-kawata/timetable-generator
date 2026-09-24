@@ -16,7 +16,7 @@ import { useAuth } from './hooks/auth-context';
 //   行き先の一覧・職員専用かどうかの判定は lib/route.ts が正本。
 //   ★ここに行き先を書き足さないこと。
 import { goTo, replaceWith, useRoute } from './hooks/useRoute';
-import { isStaffRoute } from './lib/route';
+import { isPersonSwitched, isStaffRoute } from './lib/route';
 import { useAppStore } from './stores/useMasterStore';
 import { classifyRole } from './lib/role';
 
@@ -64,13 +64,38 @@ export function AppInner() {
   //   「教員用ページが開いたまま」の状態を引き継いでしまう。
   //   ★履歴は【差し替える】（replaceWith）。積むと、次の人が戻るボタンで
   //     前の人の画面を開けてしまう。
+  //
+  // ★★2026-09-19 修正（台帳 A4-119／A4-120）────────────────────────────
+  //   【直した不具合】URL を直接開くと、必ず生徒用（#/）へ飛ばされていた。
+  //     #/seats/classroom も #/seats も #/health も #/admin も、全部です。
+  //     ＝ハッシュで画面を分ける仕組み（A4-120）が、ブックマークからは
+  //       1つも効いていませんでした。iPad だけの話ではありません。
+  //   【なぜ起きたか】ログインの状態は【必ず2段階】で届きます。
+  //       1回目の描画: loading:true  / user:null   （復元中）
+  //       しばらく後 : loading:false / user:あり   （復元できた）
+  //     前の書き方は prevUidRef を「1回目の描画の uid」＝null で始めていました。
+  //     そのため、ただ復元できただけの null → あり を「人が変わった」と数え、
+  //     開くたびに生徒用へ差し替えていました。
+  //   【直し方】★最初に「誰が入っているか」が分かった1回は、人の入れ替わりでは
+  //     ありません。まだ確かめていない印として undefined で始め、その1回は見送ります。
+  //     ・復元できただけ（null → あり）…… 飛ばさない＝URL どおりの画面が出る
+  //     ・ログアウト（あり → null）………… 飛ばす（次の人に引き継がせない）
+  //     ・入れ替わり（A → B）……………… 飛ばす
+  //   ★守り（職員専用かどうか）は、この下の番人が見ています。ここは引き継ぎ防止だけ。
+  //   ★ここを「とにかく毎回生徒用へ」に戻さないこと。ブックマークが全部死にます。
+  //   ★判断そのものは src/lib/route.ts の isPersonSwitched が正本です。
+  //     （画面の中に書くとブラウザ抜きで試験できないため。試験＝tests/route.test.mjs）
   const uid = user?.uid ?? null;
-  const prevUidRef = useRef<string | null>(uid);
+  /** ★undefined ＝ まだ一度も「誰が入っているか」を確かめていない */
+  const prevUidRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (prevUidRef.current === uid) return;
+    // 確認中は判断しない（この間の null は「誰もいない」ではなく「まだ分からない」）
+    if (authLoading) return;
+    const prev = prevUidRef.current;
     prevUidRef.current = uid;
+    if (!isPersonSwitched(prev, uid)) return;
     replaceWith('student');
-  }, [uid]);
+  }, [authLoading, uid]);
 
   const handleLogout = async () => {
     clearGasError();

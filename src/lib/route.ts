@@ -120,3 +120,31 @@ export function isStaffRoute(route: RouteName | null): boolean {
   if (route === null) return false;
   return STAFF_ONLY[route] === true;
 }
+
+/**
+ * ★入っている人が「入れ替わった」か（＝表示中のページを生徒用に戻すべきか）。
+ *   ── 2026-09-19 追加（台帳 A4-119／A4-120）
+ *
+ * ★なぜ切り出したか
+ *   この判断を App.tsx の中に直接書いていたために、URL を直接開くと必ず
+ *   生徒用（#/）へ飛ばされる不具合が、誰にも見えないまま本番で動いていました。
+ *   画面の中にあると【ブラウザ抜きで試験できない】ので、ここへ出しています。
+ *   ★App.tsx にこの判断を書き戻さないこと。
+ *
+ * @param prev ひとつ前に確かめた uid。
+ *             ★undefined ＝ まだ一度も確かめていない（＝ページを開いた直後）
+ *             null ＝ 誰も入っていないと確かめた
+ * @param next いまの uid（null ＝ 誰も入っていない）
+ *
+ * ★肝は1つだけ。【最初に分かった1回は「入れ替わり」ではない】。
+ *   ログインの状態は必ず「復元中（null）→ 復元できた（あり）」の2段階で届くので、
+ *   これを入れ替わりと数えると、開くたびに生徒用へ飛ばされます。
+ */
+export function isPersonSwitched(
+  prev: string | null | undefined,
+  next: string | null,
+): boolean {
+  // ★ページを開いた直後に「誰が入っているか」が分かっただけ。人は変わっていない
+  if (prev === undefined) return false;
+  return prev !== next;
+}
