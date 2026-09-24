@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- ★合い言葉が「どこから来たか」として外に送られないようにする -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- ★「ホーム画面に追加」で開いたとき、アドレス欄も戻るボタンも出ない形で起動する。
+         ・アドレス欄が出ない＝合い言葉が画面に映らない（写真に撮られない）
+         ・戻るボタンが無い＝前の画面へ出る道がそもそも無い
+         ★これは守りの本体ではありません。守りの本体は「この窓口が座席表しか
+           返さないこと」です。ここは見え方の話です。 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>教室の座席表</title>
+
+    <!-- ★★このページは【素のファイル】です。
+         ・React も Firebase も読み込みません
+         ・ビルドを通りません（public/ の中身はそのまま配られます）
+         ・外のサーバーから何も読み込みません（書体も含めて端末の中だけ）
+         ★<script src> を足さないこと。足すと「素のファイル」でなくなります。 -->
+    <style>
+      :root {
+        --bg: #0f1115;
+        --surface: #191d25;
+        --seat: #232936;
+        --empty: #151922;
+        --line: #2f3746;
+        --text: #f2f5fa;
+        --muted: #98a2b3;
+        --accent: #6aa9ff;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic",
+          "Noto Sans JP", system-ui, sans-serif;
+        /* ★長押しで選択・拡大鏡が出るのを止める（置きっぱなしの画面なので） */
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        overflow: hidden;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        padding: clamp(12px, 2vw, 28px);
+        padding-top: max(clamp(12px, 2vw, 28px), env(safe-area-inset-top));
+      }
+
+      header {
+        display: flex;
+        align-items: baseline;
+        gap: clamp(10px, 1.6vw, 22px);
+        flex-wrap: wrap;
+        padding-bottom: clamp(8px, 1.2vw, 16px);
+        border-bottom: 1px solid var(--line);
+      }
+      #room { font-size: clamp(20px, 2.6vw, 34px); font-weight: 700; letter-spacing: 0.02em; }
+      #day { font-size: clamp(16px, 2vw, 26px); color: var(--accent); font-weight: 600; }
+      .spacer { flex: 1; }
+      #clock { font-size: clamp(18px, 2.2vw, 30px); font-weight: 600; font-variant-numeric: tabular-nums; }
+      #asof { font-size: clamp(11px, 1.1vw, 14px); color: var(--muted); }
+
+      main { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
+
+      /* 教卓＝部屋の向きを示す面。★行1が教卓側、列1が入って左 */
+      .front {
+        margin: 0 auto clamp(8px, 1.4vw, 18px);
+        width: min(38%, 420px);
+        text-align: center;
+        font-size: clamp(11px, 1.1vw, 15px);
+        color: var(--muted);
+        letter-spacing: 0.35em;
+        padding: clamp(4px, 0.6vw, 8px) 0;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+      }
+
+      #grid {
+        display: grid;
+        gap: clamp(5px, 0.7vw, 11px);
+        flex: 1;
+        min-height: 0;
+      }
+      .seat {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        border-radius: clamp(6px, 0.7vw, 12px);
+        padding: 2px;
+        line-height: 1.25;
+        /* ★氏名は「入るところまで大きく」。28席が画面に収まる範囲で最大 */
+        font-size: clamp(13px, 1.75vw, 30px);
+        overflow: hidden;
+        word-break: break-word;
+      }
+      .seat-taken { background: var(--seat); border: 1px solid var(--line); font-weight: 600; }
+      .seat-empty { background: var(--empty); border: 1px dashed var(--line); }
+
+      #closed, #fail { text-align: center; padding: 6vh 4vw; }
+      .closed-title, .fail-title { font-size: clamp(24px, 3.4vw, 46px); font-weight: 700; }
+      .closed-next, .fail-hint {
+        margin-top: clamp(10px, 1.6vw, 20px);
+        font-size: clamp(15px, 1.8vw, 24px);
+        color: var(--muted);
+      }
+
+      #notice {
+        padding-top: clamp(6px, 0.8vw, 10px);
+        font-size: clamp(11px, 1.1vw, 15px);
+        color: #ffb4a2;
+        text-align: center;
+        min-height: 1.2em;
+      }
+
+      /* ★1分で伏せる。ふれると戻る（押す部品は置かない） */
+      #mask {
+        position: fixed;
+        inset: 0;
+        background: #000;
+        color: #3a4150;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: clamp(14px, 1.6vw, 22px);
+        z-index: 10;
+      }
+      #mask[style*="display: flex"], #mask:not([style*="display: none"]) { display: flex; }
+    </style>
+  </head>
+  <body>
+    <!-- ★このページには <a> も <button> も1つもありません。
+         他の画面へ出る道を、画面の上に作らないためです。 -->
+    <header>
+      <div id="room"></div>
+      <div id="day"></div>
+      <div class="spacer"></div>
+      <div id="clock"></div>
+      <div id="asof"></div>
+    </header>
+
+    <main>
+      <div class="front">教　卓</div>
+
+      <div id="grid"></div>
+
+      <div id="closed" style="display: none">
+        <div class="closed-title">今日は授業がありません</div>
+        <div class="closed-next"></div>
+      </div>
+
+      <div id="fail" style="display: none">
+        <div class="fail-title"></div>
+        <div class="fail-hint"></div>
+      </div>
+    </main>
+
+    <div id="notice"></div>
+
+    <div id="mask" style="display: none">画面にふれると表示します</div>
+
+    <script src="classroom.js"></script>
+  </body>
+</html>
