@@ -1,5 +1,5 @@
 /* ============================================================================
-   教室表示の【独立ページ】の試験 ── 台帳 A4-119 ／ C案（2026-09-24）
+   教室の座席表の【独立ページ】の試験 ── 2026-09-24
    ============================================================================
 
    走らせ方（他の試験と一緒に）: npm test
@@ -311,7 +311,31 @@ test('★外のサーバーから何も読み込まない（書体も含めて�
 
 /* ── 5. ★漏らさない・壊さない ──────────────────────────────────── */
 
-test('★★合い言葉がソースに埋まっていない（公開リポジトリ・台帳 A4-97）', () => {
+/**
+ * ★★このページは public/ にあるので【注記ごとそのまま公開】されます。
+ *   src/ の中はビルドで注記が落ちますが、public/ は1文字も削られません
+ *   （2026-09-24 に dist/ を実測して確かめました）。
+ *   ＝校内の管理番号・役職名・担当の呼び名・ローカルのファイル位置が、
+ *     view-source で誰にでも読めてしまいます。
+ *   ★この試験は、それが戻ってこないようにする杭です。
+ */
+const 内部語彙 = [
+  '台帳', '社長', '決裁', '理事', '事務長',
+  '裏側担当', 'web-gamen', 'web-uragawa', '秘書',
+  'A4-', 'C1-', 'C2-', 'C3-', 'A3-',
+  'C:' + String.fromCharCode(92), 'C:/', 's-kaw', 'yushi-documents',
+];
+
+test('★★公開されるページに、校内の管理番号・役職名・ローカルのファイル位置が無い', () => {
+  for (const [name, src] of [['classroom.js', jsSrc], ['classroom.html', htmlSrc]]) {
+    for (const word of 内部語彙) {
+      assert.equal(src.includes(word), false,
+        '★' + name + ' に「' + word + '」が入っています（view-source で読めます）');
+    }
+  }
+});
+
+test('★★合い言葉がソースに埋まっていない（公開リポジトリで読めるため）', () => {
   for (const src of [jsSrc, htmlSrc]) {
     let run = 0;
     let worst = 0;
@@ -359,9 +383,11 @@ test('★取れなかった理由に、中の作りを出さない（決まり�
   }
 });
 
-/* ── 6. 間隔（社長決裁の数字）────────────────────────────────────── */
+/* ── 6. 間隔（決定事項の数字）────────────────────────────────────── */
 
-test('★1分で伏せる（社長決裁・当面そのまま残す）', () => {
+test('★1分で伏せる（決定事項・当面そのまま残す）', () => {
+  // ★2026-09-24 に「残す」と決まっています。
+  //   延ばすときは public/classroom.js の MASK_IDLE_MS と、この数字の両方を直すこと。
   assert.equal(C.MASK_IDLE_MS, 60 * 1000);
 });
 
@@ -371,6 +397,39 @@ test('うまく取れていれば10分ごと・失敗していれば1分ごと�
   assert.ok(C.RETRY_MS < C.RELOAD_MS, '★失敗時の方が長い間隔になっている');
 });
 
-test('★窓口の名前が裏側と揃っている', () => {
+test('★窓口の名前がサーバー側と揃っている', () => {
   assert.equal(C.ACTION, 'classroomSeats');
 });
+
+/* ── 7. ★★教室名が2か所で食い違っていないか（来年度に効きます）──────
+   教室名は【画面側（src/lib/seatChart.ts）】と【サーバー側（GAS の断片）】の
+   2か所にあります。★片方だけ直すと、2つの画面が違う教室名を出します。
+   ★エラーにはならず、黙って食い違ったまま動きます。
+
+   ★GAS の断片はこのリポジトリの外にあります。
+     無いときは【飛ばします】（他所で clone した人の試験を赤くしないため）。
+     ★飛ばされたときは結果に「SKIP」と出ます。緑と読み違えないこと。
+   ──────────────────────────────────────────────────────────────── */
+
+const GAS_FRAGMENT = 'C:/Users/s-kaw/yushi-documents/gas_教室表示_20260924_v1.js';
+const gasFragmentExists = fs.existsSync(GAS_FRAGMENT);
+
+test('★★教室名が、画面側とサーバー側（GAS）で一致している',
+  { skip: gasFragmentExists ? false : 'GAS の断片がこの機械にありません' },
+  () => {
+    const tsSrc = fs.readFileSync(path.join(ROOT, 'src', 'lib', 'seatChart.ts'), 'utf8');
+    const ts = /export const SEAT_ROOM_NAME\s*=\s*'([^']*)'/.exec(tsSrc);
+    assert.ok(ts, '★画面側の SEAT_ROOM_NAME が見つかりません');
+
+    const gasSrc = fs.readFileSync(GAS_FRAGMENT, 'utf8');
+    const gas = /var CLASSROOM_ROOM_NAME_\s*=\s*'([^']*)'/.exec(gasSrc);
+    assert.ok(gas, '★サーバー側の CLASSROOM_ROOM_NAME_ が見つかりません');
+
+    assert.equal(
+      ts[1], gas[1],
+      '★★教室名が食い違っています。\n' +
+      '   画面側（src/lib/seatChart.ts の SEAT_ROOM_NAME）  = ' + ts[1] + '\n' +
+      '   サーバー側（GAS の CLASSROOM_ROOM_NAME_）         = ' + gas[1] + '\n' +
+      '   ★2つの画面が違う教室名を出します。両方を同じ字に直してください。',
+    );
+  });
