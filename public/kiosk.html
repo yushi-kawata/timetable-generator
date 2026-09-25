@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="referrer" content="no-referrer" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+<meta name="robots" content="noindex, nofollow" />
+<title>教室の画面</title>
+<!--
+  ★この帯だけが、このページの中身です。
+    下の2枚の枠は、それぞれ別のページをそのまま映しています。
+  ★★枠の中を触っても、この帯には届きません（別の世界のため）。
+    だから「座席表を見ている最中に時間が過ぎると、登校・下校に戻る」ことがあります。
+    帯を押し直せば、そこからまた数え直します。
+-->
+<style>
+  :root {
+    --bg:#0f1115; --fg:#f4f6fa; --sub:#9aa4b2;
+    --tab-bg:#1a1f29; --tab-on:#2f6fed; --line:#2a3140;
+    --bar-h: 64px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin:0; height:100%; width:100%; overflow:hidden;
+    background:var(--bg); color:var(--fg);
+    font-family: -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
+  }
+  body { display:flex; flex-direction:column; }
+
+  /* ★切り替えの帯。教室で生徒が指で押すので、大きく取ってあります */
+  nav {
+    flex: 0 0 var(--bar-h);
+    display:flex; gap:10px;
+    padding:8px 10px;
+    background:var(--tab-bg);
+    border-bottom:1px solid var(--line);
+  }
+  .tab {
+    flex:1; min-width:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:22px; font-weight:700;
+    color:var(--sub); background:transparent;
+    border:2px solid var(--line); border-radius:12px;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-appearance: none; appearance: none;
+    cursor:pointer;
+  }
+  /* ★選ばれている方が、ひと目で分かるように。色だけに頼らず、太さと下線も変える */
+  .tab.is-on {
+    color:#fff; background:var(--tab-on);
+    border-color:var(--tab-on);
+    box-shadow: inset 0 -4px 0 rgba(255,255,255,.35);
+  }
+  .tab:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+
+  main { flex:1; position:relative; min-height:0; }
+  .pane {
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    border:0; display:block;
+    background:var(--bg);
+  }
+  /* ★hidden だけでは .pane の display に負けるので、ここで明示的に消す */
+  .pane[hidden] { display:none; }
+
+  @media (max-width: 480px) {
+    :root { --bar-h: 56px; }
+    .tab { font-size:18px; }
+  }
+</style>
+</head>
+<body>
+  <nav>
+    <button type="button" id="tabQr" class="tab is-on" role="tab" aria-selected="true">登校・下校</button>
+    <button type="button" id="tabSeats" class="tab" role="tab" aria-selected="false">座席表</button>
+  </nav>
+  <main>
+    <iframe id="qrFrame" class="pane" title="登校・下校"></iframe>
+    <iframe id="seatsFrame" class="pane" title="座席表" hidden></iframe>
+  </main>
+  <script src="kiosk.js"></script>
+</body>
+</html>
