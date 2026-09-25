@@ -401,6 +401,134 @@ test('★窓口の名前がサーバー側と揃っている', () => {
   assert.equal(C.ACTION, 'classroomSeats');
 });
 
+/* ── 6b. ★★ページを開いたあと、URL の「#」が残っているか ─────────────
+   【2026-09-25・iPad で実際に起きたこと】
+     QR で「#…」付きの URL を開くと座席表は出る。そのまま「ホーム画面に追加」
+     もできる。★ところがホーム画面のアイコンから開き直すと
+     「設定がされていません」になる。
+     ＝読み込み直後に履歴を差し替えて「#」以降を消していたため、
+       【追加された URL には合い言葉が入っていなかった】。
+
+   ★★なぜ試験が1つも捕まえられなかったか（ここが肝心）
+     それまでの試験は、画面を持たない器で読み込んでいました。
+     このファイルの中身は
+         if (typeof document === 'undefined') return;
+     で画面まわりを丸ごと飛ばすので、★start() が【一度も走っていなかった】。
+     ＝純粋な関数だけを試していて、【起動の経路】を1行も通していなかった。
+     ★だから 252件が緑のまま、この不具合を素通りしていました。
+
+   ★ここでは作り物の画面を与えて start() を実際に走らせます。
+   ──────────────────────────────────────────────────────────────── */
+
+/** 作り物の要素 */
+function fakeEl() {
+  return {
+    textContent: '',
+    className: '',
+    style: {},
+    children: [],
+    get firstChild() { return this.children[0] || null; },
+    appendChild(c) { this.children.push(c); return c; },
+    removeChild(c) { this.children = this.children.filter((x) => x !== c); return c; },
+    querySelector() { return fakeEl(); },
+  };
+}
+
+/**
+ * 作り物の画面を与えて、このページを起動する。
+ * ★本物の順序をなぞる＝「# 付きで開く → start() が走る」。
+ */
+function startInFakeBrowser(hash) {
+  const els = {};
+  for (const id of ['grid', 'room', 'day', 'asof', 'notice', 'closed', 'mask', 'fail', 'clock']) {
+    els[id] = fakeEl();
+  }
+  const replaceStateCalls = [];
+  const listeners = [];
+  const win = {
+    location: { hash, pathname: '/timetable-generator/classroom.html', search: '' },
+    history: {},
+    addEventListener: (n) => { listeners.push(n); },
+    removeEventListener: () => {},
+  };
+
+  /**
+   * ★★本物と同じように【URL を実際に書き換える】こと。
+   *
+   *   最初の版は「呼ばれた回数を数えるだけ」で、location を動かしませんでした。
+   *   そのため、不具合をそのまま書き戻しても
+   *   ★「# が残っているか」の試験が緑のまま通ってしまいました（2026-09-25 に実測）。
+   *   ＝肝心の試験が、何も見ていないのに合格していた。
+   *   ★作り物の道具が本物と違う動きをすると、試験はこうして黙って嘘をつきます。
+   */
+  function applyUrl(args) {
+    replaceStateCalls.push(args);
+    const url = args[2];
+    if (url === undefined || url === null) return;
+    const s = String(url);
+    const i = s.indexOf('#');
+    win.location.hash = i === -1 ? '' : s.slice(i);
+    win.location.pathname = i === -1 ? s : s.slice(0, i);
+  }
+  win.history.replaceState = (...a) => applyUrl(a);
+  win.history.pushState = (...a) => applyUrl(a);
+  const ctx = {
+    console, JSON, Math, Date, String, Number, Object, Array, Boolean,
+    isFinite, Error, RegExp, URLSearchParams, Promise,
+    window: win,
+    document: {
+      readyState: 'complete',
+      getElementById: (id) => els[id] || null,
+      createElement: () => fakeEl(),
+      addEventListener: () => {},
+    },
+    setInterval: () => 0,
+    setTimeout: () => 0,
+    // ★窓口は叩かせない（ここで見たいのは URL の扱いだけ）
+    fetch: () => new Promise(() => {}),
+  };
+  ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(jsSrc, ctx, { filename: JS_PATH });
+  return { win, els, replaceStateCalls, listeners };
+}
+
+test('★★開いたあとも URL の「#」が残る（ホーム画面に追加すると動く）', () => {
+  const hash = '#u=' + GOOD_URL + '&k=' + TOKEN;
+  const env = startInFakeBrowser(hash);
+
+  // ★ここが本体。iOS の「ホーム画面に追加」は【いまアドレス欄にある URL】を保存する。
+  assert.equal(
+    env.win.location.hash, hash,
+    '★URL の # が消えています。この状態で「ホーム画面に追加」すると、' +
+    '合い言葉の無い URL が保存され、次に開いたとき動きません',
+  );
+});
+
+test('★★履歴の差し替えを呼んでいない（呼ぶとホーム画面のアイコンが壊れる）', () => {
+  const env = startInFakeBrowser('#u=' + GOOD_URL + '&k=' + TOKEN);
+  assert.equal(
+    env.replaceStateCalls.length, 0,
+    '★履歴の差し替えが復活しています（2026-09-25 に iPad で壊れた原因そのもの）',
+  );
+});
+
+test('★start() が本当に走っている（この試験が素通りしていないことの杭）', () => {
+  // ★作り物の画面を与え損ねると start() は黙って抜け、上の2件が
+  //   「何も起きていないので緑」になります。それを防ぐ杭です。
+  const env = startInFakeBrowser('#u=' + GOOD_URL + '&k=' + TOKEN);
+  assert.ok(env.listeners.length >= 3,
+    '★start() が走っていません（触ったときの受け口が付いていない）');
+  assert.ok(env.listeners.includes('touchstart'), '★touchstart の受け口が無い');
+});
+
+test('★合い言葉が無い URL で開いたら、そうと分かるように出す', () => {
+  const env = startInFakeBrowser('');
+  assert.equal(env.win.location.hash, '');
+  // 「設定がされていません」の枠が出ている
+  assert.notEqual(env.els.fail.style.display, 'none');
+});
+
 /* ── 7. ★★教室名が2か所で食い違っていないか（来年度に効きます）──────
    教室名は【画面側（src/lib/seatChart.ts）】と【サーバー側（GAS の断片）】の
    2か所にあります。★片方だけ直すと、2つの画面が違う教室名を出します。
