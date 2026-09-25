@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="referrer" content="no-referrer" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black" />
+<meta name="robots" content="noindex, nofollow" />
+<title>登校・下校</title>
+<style>
+  :root { --bg:#0f1115; --fg:#f4f6fa; --sub:#9aa4b2; --in:#2f6fed; --out:#e07b2a; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font-family: -apple-system, "Hiragino Kaku Gothic ProN", sans-serif; }
+  body { display:flex; flex-direction:column; }
+  header { display:flex; justify-content:space-between; align-items:baseline;
+    padding:16px 24px; font-size:24px; }
+  #clock { font-variant-numeric: tabular-nums; }
+  main { flex:1; display:flex; gap:48px; padding:8px 32px 0; }
+  .card { flex:1; min-width:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; border-radius:20px; padding:16px; }
+  .card.in  { background:rgba(47,111,237,.12); border:3px solid var(--in); }
+  .card.out { background:rgba(224,123,42,.12); border:3px solid var(--out); }
+  .card img { width:min(38vw, 52vh); max-width:100%; height:auto; aspect-ratio:1 / 1;
+    background:#fff; border-radius:12px; padding:10px; }
+  .label { margin-top:14px; font-size:34px; font-weight:700; }
+  .card.in  .label { color:#7aa7ff; }
+  .card.out .label { color:#ffb36b; }
+  .sub { font-size:20px; color:var(--sub); margin-top:4px; }
+  footer { padding:10px 24px 18px; text-align:center; color:var(--sub); font-size:18px; }
+  #fail { display:none; padding:10px 24px; text-align:center; color:#ffd479; font-size:20px; }
+</style>
+</head>
+<body>
+  <header><span id="campus"></span><span id="clock"></span></header>
+  <div id="fail"></div>
+  <main>
+    <section class="card in">
+      <img id="tokouImg" alt="登校" />
+      <div class="label">▼ 登校</div>
+      <div class="sub">来たとき</div>
+    </section>
+    <section class="card out">
+      <img id="gekouImg" alt="下校" />
+      <div class="label">▲ 下校</div>
+      <div class="sub">帰るとき</div>
+    </section>
+  </main>
+  <footer id="asof"></footer>
+  <script src="qr.js"></script>
+</body>
+</html>
