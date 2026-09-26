@@ -19,6 +19,13 @@ import { findAttendance } from '../lib/attendanceMatch';
 // ★連携の結果（成否＋理由）は dxResult.ts にまとめてある（台帳 A4-86）
 import { toDxResult } from './dxResult';
 import type { DxCheckInResult } from './dxResult';
+import {
+  PERSIST_NAME,
+  PERSIST_VERSION,
+  mergePersisted,
+  migratePersisted,
+  partializeForDevice,
+} from './persistPolicy';
 
 // GAS側は "course" カラム、フロント側は "classroom" フィールド
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -684,8 +691,12 @@ export const useAppStore = create<AppState>()(
       },
     }),
     {
-      name: 'timetable-system-v5',
-      partialize: (s) => ({ tt: s.tt, records: s.records, students: s.students }),
+      // ★端末に残すのは時間割の表だけ。名簿と申告は残さない（persistPolicy.ts を見ること）
+      name: PERSIST_NAME,
+      version: PERSIST_VERSION,
+      partialize: (s) => partializeForDevice(s),
+      migrate: (persisted) => migratePersisted<TimetableTemplate>(persisted),
+      merge: (persisted, current) => mergePersisted(persisted, current),
     }
   )
 );
