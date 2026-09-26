@@ -45,6 +45,15 @@
   var RELOAD_MS = 10 * 60 * 1000;
   /** 取れなかったときに取り直す間隔 */
   var RETRY_MS = 60 * 1000;
+  /**
+   * ★開いて最初の取得に失敗したときだけ、この時間で1回だけやり直す。
+   *   朝いちばんに1回失敗すると、次の取り直しまで最大1分「取得できません
+   *   でした」が出たままになり、入ってきた生徒には壊れて見えるため。
+   *   ★やり直すのは1回だけ。それも失敗したら、以降は RETRY_MS に戻る
+   *     （窓口を短い間隔で叩き続けない）。
+   *   ★一度でも取れたあとの失敗には使わない（前の座席表が出ていた画面なので）。
+   */
+  var FIRST_RETRY_MS = 5 * 1000;
   /** 時計と「伏せるまで」を見張る間隔 */
   var TICK_MS = 15 * 1000;
 
@@ -192,6 +201,17 @@
     return { title: '座席表を取得できませんでした', hint: '時間をおいて自動でやり直します' };
   }
 
+  /**
+   * 失敗したあと、すぐのやり直しを予約するなら何ミリ秒後か。0 なら予約しない。
+   * ★開いてから一度も取れていない、かつ、まだ一度もすぐのやり直しをしていない
+   *   ときだけ FIRST_RETRY_MS を返す。
+   */
+  function earlyRetryDelay(state) {
+    if (!state || state.everLoaded) return 0;
+    if (state.earlyRetryUsed) return 0;
+    return FIRST_RETRY_MS;
+  }
+
   /** 「8:40」の形にする */
   function hhmm(d) {
     function p2(x) { return (x < 10 ? '0' : '') + x; }
@@ -202,6 +222,7 @@
     MASK_IDLE_MS: MASK_IDLE_MS,
     RELOAD_MS: RELOAD_MS,
     RETRY_MS: RETRY_MS,
+    FIRST_RETRY_MS: FIRST_RETRY_MS,
     TICK_MS: TICK_MS,
     ACTION: ACTION,
     isAllowedGasUrl: isAllowedGasUrl,
@@ -210,6 +231,7 @@
     normalize: normalize,
     buildGrid: buildGrid,
     failureText: failureText,
+    earlyRetryDelay: earlyRetryDelay,
     hhmm: hhmm,
   };
 
@@ -223,6 +245,10 @@
   var bookmark = null;
   var failedLast = false;
   var lastLoadAt = 0;
+  /** 開いてから一度でも座席表を取れたか */
+  var everLoaded = false;
+  /** 最初の失敗のあとの「すぐのやり直し」を使ったか（使えるのは1回だけ） */
+  var earlyRetryUsed = false;
   var lastTouchAt = Date.now();
 
   function text(el, value) {
@@ -292,11 +318,20 @@
     text(elNotice, notes.join('／'));
   }
 
+  function fail(reason) {
+    failedLast = true;
+    renderFailure(reason);
+    var delay = earlyRetryDelay({ everLoaded: everLoaded, earlyRetryUsed: earlyRetryUsed });
+    if (delay > 0) {
+      earlyRetryUsed = true;
+      setTimeout(load, delay);
+    }
+  }
+
   function load() {
     lastLoadAt = Date.now();
     if (!bookmark || !bookmark.ok) {
-      failedLast = true;
-      renderFailure(bookmark ? bookmark.reason : 'noHash');
+      fail(bookmark ? bookmark.reason : 'noHash');
       return;
     }
     // ★資格情報を送らない（Cookie を付けない）。合い言葉だけで通る窓口です
@@ -312,16 +347,15 @@
       .then(function (json) {
         var view = normalize(json);
         if (!view.ok) {
-          failedLast = true;
-          renderFailure(view.reason);
+          fail(view.reason);
           return;
         }
         failedLast = false;
+        everLoaded = true;
         renderView(view);
       })
       .catch(function () {
-        failedLast = true;
-        renderFailure('network');
+        fail('network');
       });
   }
 
