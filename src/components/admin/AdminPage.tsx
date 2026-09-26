@@ -12,7 +12,7 @@ const DAY_SEL: Record<DayOfWeek, string> = {
 };
 
 export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
-  const { students, saveStudents, tt, updateTTCell, saveTT, gasUrl, setGasUrl, fetchStudents } = useAppStore();
+  const { students, studentsMerged, saveStudents, tt, updateTTCell, saveTT, gasUrl, setGasUrl, fetchStudents } = useAppStore();
   const [tab, setTab] = useState<'students' | 'timetable' | 'settings'>('students');
   const [localStudents, setLocalStudents] = useState<Student[]>([]);
   const [newName, setNewName] = useState('');
@@ -162,6 +162,16 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
               </button>
             </div>
           </div>
+
+          {/* ★重複をまとめたときは、黙らずに件数を出す */}
+          {studentsMerged > 0 && (
+            <div
+              role="status"
+              className="mb-4 px-4 py-3 rounded-lg text-sm leading-relaxed border bg-amber-50 border-amber-300 text-amber-800"
+            >
+              名簿に同じ学籍番号（無い場合は同じDXメール）の行が {studentsMerged} 件あったため、それぞれ最後の1件だけを表示しています。保存すると、表示している内容で名簿が上書きされます。
+            </div>
+          )}
 
           {/* ★断られたときの理由。ここを出さないと「押したのに何も起きない」になる */}
           {saveMsg && saveMsg.kind !== 'ok' && (

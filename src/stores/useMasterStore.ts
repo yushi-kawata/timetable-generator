@@ -26,6 +26,7 @@ import {
   migratePersisted,
   partializeForDevice,
 } from './persistPolicy';
+import { dedupeByStudentKey, studentKey } from './studentDedupe';
 
 // GAS側は "course" カラム、フロント側は "classroom" フィールド
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -314,6 +315,11 @@ interface AppState {
   tt: TimetableTemplate;
   records: StudentRecord[];
   students: Student[];
+  /**
+   * 読み込んだ名簿で、同じ学籍番号（無ければ同じメール）の行をまとめて減った件数。
+   * ★0 でなければ画面に出す（黙ってまとめない）
+   */
+  studentsMerged: number;
   attendance: AttendanceRecord[];
   period2: Period2Selection[];
   qrData: QrData | null;
@@ -362,13 +368,15 @@ interface AppState {
   clearRecords: () => Promise<void>;
 }
 
-// 空行を除外 & 同名重複を除外（最後の登録を優先）
+// 空行を除外 & 重複をまとめる（最後の登録を優先）
+// ★氏名をキーにしない（同姓同名が黙って消える）。まとめ方は studentDedupe.ts
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function dedupeStudents(raw: any[]): Student[] {
-  const mapped = raw.map(mapStudentFromGas).filter((s) => s.name.trim());
-  const seen = new Map<string, Student>();
-  for (const s of mapped) seen.set(s.name, s);
-  return [...seen.values()];
+function dedupeStudents(raw: any[]): { students: Student[]; merged: number } {
+  const rows = raw
+    .map((r) => ({ key: studentKey(r), student: mapStudentFromGas(r) }))
+    .filter((x) => x.student.name.trim());
+  const { kept, merged } = dedupeByStudentKey(rows, (x) => x.key);
+  return { students: kept.map((x) => x.student), merged };
 }
 
 export const useAppStore = create<AppState>()(
@@ -377,6 +385,7 @@ export const useAppStore = create<AppState>()(
       tt: JSON.parse(JSON.stringify(DEFAULT_TT)),
       records: [],
       students: [],
+      studentsMerged: 0,
       attendance: [],
       period2: [],
       qrData: null,
@@ -451,7 +460,8 @@ export const useAppStore = create<AppState>()(
           if (ttData && typeof ttData === 'object' && ttData['月']) set({ tt: ttData });
         }
         if (studentsRes && studentsRes.ok && Array.isArray(studentsRes.data)) {
-          set({ students: dedupeStudents(studentsRes.data) });
+          const d = dedupeStudents(studentsRes.data);
+          set({ students: d.students, studentsMerged: d.merged });
         }
         set({ loading: false });
       },
@@ -460,7 +470,8 @@ export const useAppStore = create<AppState>()(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res = await gasCall<any[]>('getStudents');
         if (res.ok && Array.isArray(res.data)) {
-          set({ students: dedupeStudents(res.data) });
+          const d = dedupeStudents(res.data);
+          set({ students: d.students, studentsMerged: d.merged });
         }
       },
 
@@ -558,7 +569,8 @@ export const useAppStore = create<AppState>()(
           };
         }
 
-        set({ students });
+        // 保存した一覧がそのまま名簿になった＝まとめた行はもう無い
+        set({ students, studentsMerged: 0 });
         return { ok: true, needsWipeConfirm: false, message: '保存しました' };
       },
 
