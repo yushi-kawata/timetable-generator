@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/useMasterStore';
 import { DAYS, DAY_ICONS, ROOMS, PERIODS } from '../../types/master';
 import type { DayOfWeek, Student } from '../../types/master';
+import { studentSaveGate } from '../../stores/studentSaveGate';
 
 const DAY_SEL: Record<DayOfWeek, string> = {
   月: 'border-[var(--mon)] bg-[var(--mon-l)] text-[var(--mon)]',
@@ -12,7 +13,9 @@ const DAY_SEL: Record<DayOfWeek, string> = {
 };
 
 export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
-  const { students, studentsMerged, saveStudents, tt, updateTTCell, saveTT, gasUrl, setGasUrl, fetchStudents } = useAppStore();
+  const { students, studentsMerged, studentsSync, saveStudents, tt, updateTTCell, saveTT, gasUrl, setGasUrl, fetchStudents } = useAppStore();
+  // ★名簿の保存は上書き。いちばん新しい読み込みが成功していなければ保存させない
+  const saveGate = studentSaveGate(studentsSync);
   const [tab, setTab] = useState<'students' | 'timetable' | 'settings'>('students');
   const [localStudents, setLocalStudents] = useState<Student[]>([]);
   const [newName, setNewName] = useState('');
@@ -151,17 +154,37 @@ export default function AdminPage({ goTeacher }: { goTeacher: () => void }) {
                   ✅ {saveMsg.text}
                 </span>
               )}
-              <button
-                onClick={handleSaveStudents}
-                disabled={saving}
-                className={`px-5 py-2 rounded-lg font-bold text-xs text-white disabled:opacity-60 ${
-                  wipeConfirmReady ? 'bg-[var(--red,#b91c1c)] bg-red-700 hover:bg-red-800' : 'bg-[var(--accent)] hover:bg-blue-800'
-                }`}
-              >
-                {saving ? '保存中...' : wipeConfirmReady ? '全員を消して保存' : '💾 保存'}
-              </button>
+              {saveGate.canSave && (
+                <button
+                  onClick={handleSaveStudents}
+                  disabled={saving}
+                  className={`px-5 py-2 rounded-lg font-bold text-xs text-white disabled:opacity-60 ${
+                    wipeConfirmReady ? 'bg-[var(--red,#b91c1c)] bg-red-700 hover:bg-red-800' : 'bg-[var(--accent)] hover:bg-blue-800'
+                  }`}
+                >
+                  {saving ? '保存中...' : wipeConfirmReady ? '全員を消して保存' : '💾 保存'}
+                </button>
+              )}
             </div>
           </div>
+
+          {/* ★保存を止めているときは、押せないボタンではなく理由を文字で出す */}
+          {!saveGate.canSave && (
+            <div
+              role="status"
+              className="mb-4 px-4 py-3 rounded-lg text-sm leading-relaxed border bg-amber-50 border-amber-300 text-amber-800"
+            >
+              {saveGate.message}
+              {saveGate.canReload && (
+                <button
+                  onClick={() => { void fetchStudents(); }}
+                  className="block mt-2 px-4 py-2 rounded-lg font-bold text-xs text-white bg-[var(--accent)] hover:bg-blue-800"
+                >
+                  名簿を読み込み直す
+                </button>
+              )}
+            </div>
+          )}
 
           {/* ★重複をまとめたときは、黙らずに件数を出す */}
           {studentsMerged > 0 && (

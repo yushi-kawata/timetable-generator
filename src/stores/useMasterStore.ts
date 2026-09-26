@@ -27,6 +27,8 @@ import {
   partializeForDevice,
 } from './persistPolicy';
 import { dedupeByStudentKey, studentKey } from './studentDedupe';
+import { studentSaveGate } from './studentSaveGate';
+import type { StudentsSync } from './studentSaveGate';
 
 // GAS側は "course" カラム、フロント側は "classroom" フィールド
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -320,6 +322,11 @@ interface AppState {
    * ★0 でなければ画面に出す（黙ってまとめない）
    */
   studentsMerged: number;
+  /**
+   * 名簿のいちばん新しい読み込みの状態。★'ok' のときだけ保存できる
+   * （名簿の保存は上書きなので、古い表示のまま保存させない）
+   */
+  studentsSync: StudentsSync;
   attendance: AttendanceRecord[];
   period2: Period2Selection[];
   qrData: QrData | null;
@@ -386,6 +393,7 @@ export const useAppStore = create<AppState>()(
       records: [],
       students: [],
       studentsMerged: 0,
+      studentsSync: 'idle',
       attendance: [],
       period2: [],
       qrData: null,
@@ -434,7 +442,7 @@ export const useAppStore = create<AppState>()(
         }
         const isStaff = role === 'staff';
 
-        set({ loading: true });
+        set(isStaff ? { loading: true, studentsSync: 'loading' } : { loading: true });
 
         const [ttRes, recsRes, studentsRes] = await Promise.all([
           gasCall<TimetableTemplate | null>('getTT'),
@@ -461,17 +469,24 @@ export const useAppStore = create<AppState>()(
         }
         if (studentsRes && studentsRes.ok && Array.isArray(studentsRes.data)) {
           const d = dedupeStudents(studentsRes.data);
-          set({ students: d.students, studentsMerged: d.merged });
+          set({ students: d.students, studentsMerged: d.merged, studentsSync: 'ok' });
+        } else if (studentsRes) {
+          // ★取り直せなかった。表示は古いかもしれないので、保存を止める
+          set({ studentsSync: 'failed' });
         }
         set({ loading: false });
       },
 
       fetchStudents: async () => {
+        set({ studentsSync: 'loading' });
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res = await gasCall<any[]>('getStudents');
         if (res.ok && Array.isArray(res.data)) {
           const d = dedupeStudents(res.data);
-          set({ students: d.students, studentsMerged: d.merged });
+          set({ students: d.students, studentsMerged: d.merged, studentsSync: 'ok' });
+        } else {
+          // ★取り直せなかった。表示は古いかもしれないので、保存を止める
+          set({ studentsSync: 'failed' });
         }
       },
 
@@ -525,6 +540,12 @@ export const useAppStore = create<AppState>()(
       },
 
       saveStudents: async (students, confirmEmpty = false) => {
+        // ★いちばん新しい読み込みが成功していなければ、裏側を叩かずに止める。
+        //   画面もボタンの代わりに理由を出すが、ここが最後の止め（画面に頼らない）
+        const gate = studentSaveGate(get().studentsSync);
+        if (!gate.canSave) {
+          return { ok: false, needsWipeConfirm: false, message: gate.message };
+        }
         const payload: Record<string, unknown> = { data: students.map(mapStudentToGas) };
         // ★全消しは明示したときだけ。既定では送らない
         if (confirmEmpty) payload.confirmEmpty = true;
