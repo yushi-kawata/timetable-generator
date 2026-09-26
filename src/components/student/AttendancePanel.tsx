@@ -3,10 +3,11 @@ import { useAppStore } from '../../stores/useMasterStore';
 import type { DxFailReason } from '../../stores/dxResult';
 import { nowTime } from './studentDate';
 import { recordFlow, verifyFlow } from './attendanceFlow';
+import { pickAttendanceAction } from './attendanceActions';
 import { findAttendance } from '../../lib/attendanceMatch';
 // ★時刻の表し方は1箇所に集約してある。日付型で届いた時刻を生のまま出さない
 import { toTimeText } from '../../lib/timeText';
-import type { Op, FlowReq, DxSkipReason } from './attendanceFlow';
+import type { Op, FlowReq, DxSkipReason, ConfirmResult } from './attendanceFlow';
 import { DX_REASON_TEXT, DX_RETRYABLE, DX_SKIP_TEXT } from './dxMessages';
 
 /* ============================================================================
@@ -132,11 +133,14 @@ export default function AttendancePanel({
    *   ★younetDX には記録できているのに画面が「確認できません」と出ていたのは、
    *     この2つのどちらか（あるいは両方）による。
    */
-  const confirmSaved = async (op: Op): Promise<boolean> => {
+  //   ★取り直せたうえで記録が無いときは 'absent' を返す（取り直しの失敗 false と分ける）。
+  //     「記録を確認する」は 'absent' のときだけ、もう一度記録するボタンを出す。
+  const confirmSaved = async (op: Op): Promise<ConfirmResult> => {
     const reread = await fetchAttendance(today);
     if (!reread) return false;
     const rec = findAttendance(useAppStore.getState().attendance, today, studentName);
-    return op === 'in' ? !!rec : !!rec?.checkoutTime;
+    const present = op === 'in' ? !!rec : !!rec?.checkoutTime;
+    return present ? true : 'absent';
   };
 
   /**
@@ -337,7 +341,7 @@ function buildResult(a: {
   if (a.req.kind === 'failed') {
     return {
       headline: a.req.op === 'in' ? '登校を記録できませんでした' : '下校を記録できませんでした',
-      note: '記録は残っていません。もう一度記録してください。何度も同じ表示が出るときは、先生にお伝えください。',
+      note: '記録は残っていません。「記録を確認する」を押して確かめてから、もう一度記録してください。何度も同じ表示が出るときは、先生にお伝えください。',
       times, tone: TONE.danger,
     };
   }
@@ -431,72 +435,51 @@ function AttendanceAction(a: {
   record: (op: Op) => void;
   verify: (op: Op) => void;
 }) {
-  // 1) 初期取得中：まだ有効にしない（理由は上の文言に出ている）
-  if (a.loading) {
-    return (
-      <button type="button" className="attendance-action" disabled>
-        登校する
-      </button>
-    );
-  }
+  // ★どの状態でどのボタンを出すかは attendanceActions.ts が決める（試験がそちらを見ている）
+  const action = pickAttendanceAction(a);
 
-  // 3) 送信中：位置も大きさも変えない
-  if (a.req.kind === 'sending' || a.req.kind === 'verifying') {
-    return (
-      <button type="button" className="attendance-action" disabled aria-busy="true">
-        記録しています…
-      </button>
-    );
-  }
-
-  // 8) 成否不明：新しい記録を作らせない。まず確認させる
-  if (a.req.kind === 'unknown') {
-    const op = a.req.op;
-    return (
-      <div className="flex flex-col gap-2">
+  switch (action.kind) {
+    // 初期取得中：まだ有効にしない（理由は上の文言に出ている）
+    case 'loading':
+      return (
+        <button type="button" className="attendance-action" disabled>
+          登校する
+        </button>
+      );
+    // 送信中：位置も大きさも変えない
+    case 'busy':
+      return (
+        <button type="button" className="attendance-action" disabled aria-busy="true">
+          記録しています…
+        </button>
+      );
+    // 失敗・成否不明：新しい記録を作らせない。まず確認させる
+    case 'verify': {
+      const op = action.op;
+      return (
         <button type="button" className="control-button w-full" onClick={() => a.verify(op)}>
           記録を確認する
         </button>
-        <button
-          type="button"
-          className="text-[0.875rem] leading-5 text-[var(--accent)] underline underline-offset-2 font-bold py-2"
-          onClick={() => a.record(op)}
-        >
-          {op === 'in' ? 'もう一度、登校を記録する' : 'もう一度、下校を記録する'}
-        </button>
-      </div>
-    );
-  }
-
-  // 7) 失敗が確定：その場でやり直せる
-  if (a.req.kind === 'failed') {
-    const op = a.req.op;
-    return (
-      <button type="button" className="attendance-action feedback-enter" onClick={() => a.record(op)}>
-        もう一度記録する
-      </button>
-    );
-  }
-
-  // 6) 下校まで記録済み：大きな操作ボタンは出さない
-  if (a.checkedOut) return null;
-
-  // 5) 下校受付可能
-  if (a.checkedIn) {
+      );
+    }
+    // 下校まで記録済み：大きな操作ボタンは出さない
+    case 'none':
+      return null;
     // 登校の直後だけ、下校ボタンをまだ出さない。
     // ★場所は空けておく（下の時間割が上下に飛ばないように）
-    if (!a.checkoutVisible) return <div className="min-h-16" aria-hidden="true" />;
-    return (
-      <button type="button" className="attendance-action feedback-enter" onClick={() => a.record('out')}>
-        下校する
-      </button>
-    );
+    case 'spacer':
+      return <div className="min-h-16" aria-hidden="true" />;
+    case 'record': {
+      const op = action.op;
+      return (
+        <button
+          type="button"
+          className={`attendance-action${op === 'out' ? ' feedback-enter' : ''}`}
+          onClick={() => a.record(op)}
+        >
+          {op === 'in' ? '登校する' : '下校する'}
+        </button>
+      );
+    }
   }
-
-  // 2) 未記録・受付可能
-  return (
-    <button type="button" className="attendance-action" onClick={() => a.record('in')}>
-      登校する
-    </button>
-  );
 }

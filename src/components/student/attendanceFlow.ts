@@ -28,6 +28,21 @@ export type Op = 'in' | 'out';
  */
 export type DxSkipReason = 'saveFailed' | 'saveUnknown' | 'notConfirmed';
 
+/**
+ * 記録を取り直して確かめた結果。
+ *  true      … 記録が残っていることを確かめた
+ *  false     … 確かめられなかった（取り直しに失敗した）
+ *  'absent'  … ★取り直せたうえで、記録が【無い】ことを確かめた
+ * ★false と 'absent' を混ぜないこと。「分からない」のに「無い」と扱うと、
+ *   もう一度記録させて二重に送る道が開く。
+ */
+export type ConfirmResult = boolean | 'absent';
+
+/** 記録が残っていると確かめられたときだけ true（'absent' は真に数えない） */
+function isPresent(r: ConfirmResult): boolean {
+  return r === true;
+}
+
 /** 校内の記録が書けなかったときの理由。'' は理由が分からない */
 export type SaveFailureKind = '' | 'signin' | 'forbidden' | 'network';
 
@@ -46,13 +61,15 @@ export type FlowReq =
  *  confirmed     … 書けたことを取り直して確かめられた。連携する
  *  notConfirmed  … 書けたが、確かめられなかった。★それでも連携する
  *  superseded    … 追い越された（新しい操作が始まった）。そちらが連携する
+ *  absent        … 「記録を確認する」で、記録が無いことを確かめた。連携しない
  */
 export type FlowOutcome =
   | 'saveFailed'
   | 'saveUnknown'
   | 'confirmed'
   | 'notConfirmed'
-  | 'superseded';
+  | 'superseded'
+  | 'absent';
 
 export type RecordFlowDeps = {
   /** 校内の記録を書く（checkIn / checkOut）。false＝書けていない */
@@ -60,7 +77,7 @@ export type RecordFlowDeps = {
   /** 書けなかったときの理由を取る。'forbidden' / 'signin' は「書かれていない」が確定 */
   saveFailureKind: () => SaveFailureKind;
   /** 書けたことを裏側から取り直して確かめる */
-  confirmSaved: (op: Op) => Promise<boolean>;
+  confirmSaved: (op: Op) => Promise<ConfirmResult>;
   /** 教務システム（younetDX）連携 */
   runDx: (op: Op) => Promise<void>;
   /** この手続きがまだ最新か（新しい操作に追い越されていないか） */
@@ -101,7 +118,8 @@ export async function recordFlow(op: Op, d: RecordFlowDeps): Promise<FlowOutcome
   d.setReq({ kind: 'verifying', op });
   let confirmed = false;
   try {
-    confirmed = await d.confirmSaved(op);
+    // ★書けた直後に 'absent' が返っても「残っている」とは扱わない
+    confirmed = isPresent(await d.confirmSaved(op));
   } catch {
     // 確かめに失敗しただけ。記録が書けたことは上で分かっている
     confirmed = false;
@@ -122,7 +140,7 @@ export async function recordFlow(op: Op, d: RecordFlowDeps): Promise<FlowOutcome
 }
 
 export type VerifyFlowDeps = {
-  confirmSaved: (op: Op) => Promise<boolean>;
+  confirmSaved: (op: Op) => Promise<ConfirmResult>;
   runDx: (op: Op) => Promise<void>;
   /** すでに送信できているか（できているなら二重に送らない） */
   dxAlreadySent: () => boolean;
@@ -139,17 +157,29 @@ export type VerifyFlowDeps = {
  *   教務システム連携を試す＝【再試行の経路】。
  *   確かめられていないときに送らないのは、校内に記録が無いまま向こうだけ
  *   登録するのを避けるため。
+ * ★失敗・成否不明の画面には「登校する」を出さず、この「記録を確認する」だけを
+ *   置いている。記録が【無い】ことを確かめられたときに限り、ふだんの画面
+ *   （idle）に戻す＝そこで初めて、もう一度記録するボタンが出る。
+ *   確かめられなかったときは成否不明のまま（もう一度確認させる）。
  */
 export async function verifyFlow(op: Op, d: VerifyFlowDeps): Promise<FlowOutcome> {
   d.setReq({ kind: 'verifying', op });
-  let confirmed = false;
+  let result: ConfirmResult = false;
   try {
-    confirmed = await d.confirmSaved(op);
+    result = await d.confirmSaved(op);
   } catch {
-    confirmed = false;
+    result = false;
   }
   if (!d.isCurrent()) return 'superseded';
 
+  if (result === 'absent') {
+    // 記録が無いと確かめられた。ふだんの画面に戻す（ここで連携はしない）
+    d.setReq({ kind: 'idle' });
+    if (d.onDxSkipped) d.onDxSkipped(op, 'notConfirmed');
+    return 'absent';
+  }
+
+  const confirmed = isPresent(result);
   if (!confirmed) {
     d.setReq({ kind: 'unknown', op, retried: true });
     if (d.onDxSkipped) d.onDxSkipped(op, 'notConfirmed');
