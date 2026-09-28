@@ -29,6 +29,10 @@ import {
 import { dedupeByStudentKey, studentKey } from './studentDedupe';
 import { studentSaveGate } from './studentSaveGate';
 import type { StudentsSync } from './studentSaveGate';
+// ★QRが今日のものかの判定は qrStatus.ts（台帳 A4-98 恒久対処(2)）
+import { loadQr } from './qrStatus';
+import type { QrData, QrStatus } from './qrStatus';
+import { toYmd } from '../lib/attendanceMatch';
 
 // GAS側は "course" カラム、フロント側は "classroom" フィールド
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -278,16 +282,6 @@ async function gasCall<T>(
   return { ok: true, data: json as T };
 }
 
-interface QrData {
-  campus: string;
-  date: string;
-  tokou_qr: string;
-  gekou_qr: string;
-  tokou_url: string | null;
-  gekou_url: string | null;
-  updated_at: string;
-}
-
 /** 名簿の保存結果。画面に出す文言つき */
 export interface SaveStudentsResult {
   ok: boolean;
@@ -329,7 +323,12 @@ interface AppState {
   studentsSync: StudentsSync;
   attendance: AttendanceRecord[];
   period2: Period2Selection[];
+  /** ★今日（日本時間）のQRだけが入る。前日のQRは入れない（台帳 A4-98） */
   qrData: QrData | null;
+  /** QRの状態。'ok' 以外のときは教務システムへ送らない */
+  qrStatus: QrStatus;
+  /** 最後に届いたQRの日付（YYYY-MM-DD）。stale の切り分け用。読めなければ '' */
+  qrDate: string;
   loading: boolean;
   gasUrl: string;
   /** 裏側に拒否された／つながらないときの文言。'' なら正常 */
@@ -397,6 +396,8 @@ export const useAppStore = create<AppState>()(
       attendance: [],
       period2: [],
       qrData: null,
+      qrStatus: 'idle',
+      qrDate: '',
       loading: false,
       gasUrl: currentGasUrl(),
       gasError: '',
@@ -512,14 +513,18 @@ export const useAppStore = create<AppState>()(
 
       // ★QRだけは別プロジェクトの窓口。A4-41 の番人はここには入っていないので
       //   IDトークンは送らない（送っても向こうは見ない）。今回の対象外。
+      // ★2026-09-28（台帳 A4-98 恒久対処(2)）: 日付が今日でないQRは持たない。
+      //   以前は日付を見ずに入れていた＝前日のトークンを younetDX へ送っていた。
+      //   以前の catch {} は全例外を捨てていた＝「届いていない」と区別が付かなかった。
+      //   いまは qrStatus に 'ok' / 'stale' / 'error' を残す。
+      //   ★外へは投げない（QRが取れなくても、登校・下校の校内記録は止めない）。
       fetchQrData: async () => {
-        try {
+        const today = toYmd(new Date()); // 日本時間の暦日
+        const r = await loadQr(async () => {
           const res = await fetch(`${QR_GAS_URL}?action=api`, { redirect: 'follow' });
-          const data = await res.json();
-          if (data && data.tokou_qr) set({ qrData: data });
-        } catch {
-          // QRが取れなくても、登校・下校そのものは記録できるのでここでは止めない
-        }
+          return res.json();
+        }, today, toYmd);
+        set({ qrData: r.data, qrStatus: r.status, qrDate: r.qrDate });
       },
 
       setTT: (tt) => set({ tt }),

@@ -4,7 +4,9 @@ import type { DxFailReason } from '../../stores/dxResult';
 import { nowTime } from './studentDate';
 import { recordFlow, verifyFlow } from './attendanceFlow';
 import { pickAttendanceAction } from './attendanceActions';
-import { findAttendance } from '../../lib/attendanceMatch';
+import { findAttendance, toYmd } from '../../lib/attendanceMatch';
+// ★今日のQRかどうかの判定は qrStatus.ts（台帳 A4-98 恒久対処(2)）
+import { pickDxUrl } from '../../stores/qrStatus';
 // ★時刻の表し方は1箇所に集約してある。日付型で届いた時刻を生のまま出さない
 import { toTimeText } from '../../lib/timeText';
 import type { Op, FlowReq, DxSkipReason, ConfirmResult } from './attendanceFlow';
@@ -87,7 +89,7 @@ export default function AttendancePanel({
   const checkOut = useAppStore(s => s.checkOut);
   const fetchAttendance = useAppStore(s => s.fetchAttendance);
   const dxCheckIn = useAppStore(s => s.dxCheckIn);
-  const qrData = useAppStore(s => s.qrData);
+  const fetchQrData = useAppStore(s => s.fetchQrData);
 
   const [req, setReq] = useState<Req>({ kind: 'idle' });
   const [dx, setDx] = useState<Dx>({ kind: 'none' });
@@ -148,11 +150,25 @@ export default function AttendancePanel({
    * ★QRの行き先が空でも送る（裏側が noDxUrl として audit に1行残す）。
    *   ここで手前止めすると「送っていない」と「送って断られた」の区別が
    *   どこにも残らない。それが台帳 A4-86 で10日近く分からなかった理由。
+   * ★2026-09-28（台帳 A4-98 恒久対処(2)）: ただし【今日のQRでない】ときは送らない。
+   *   前日のトークンで送ると younetDX に入れず失敗する（9/15 の再発）。
+   *   送らないことは 'skipped'（qrStale / qrError）として画面に出す＝黙って抜けない。
+   *   ・今日のQRを持っていなければ、送る前に1回だけ取り直す
+   *     （ページを開いた後にQRが届いた朝・最初の取得がまだ終わっていないとき）
+   *   ・持っていても日付をもう一度見る（開いたまま日をまたいだ画面）
+   *   ★見送りのときに「もう一度記録」させる大ボタンは出さない（二重登録・A4-100）。
    */
   const runDx = async (op: Op) => {
-    const url = (op === 'in' ? qrData?.tokou_url : qrData?.gekou_url) || '';
     applyDx({ kind: 'sending', op });
-    const res = await dxCheckIn(dxEmail, url);
+    const today = toYmd(new Date()); // 日本時間の暦日
+    if (useAppStore.getState().qrStatus !== 'ok') await fetchQrData();
+    const st = useAppStore.getState();
+    const pick = pickDxUrl({ status: st.qrStatus, data: st.qrData }, op, today, toYmd);
+    if (!pick.send) {
+      applyDx({ kind: 'skipped', op, why: pick.why });
+      return;
+    }
+    const res = await dxCheckIn(dxEmail, pick.url);
     applyDx(res.ok
       ? { kind: 'ok', op }
       : { kind: 'failed', op, reason: res.reason, code: res.code });
@@ -394,8 +410,16 @@ function DxLine({ dx, schoolConfirmed, onRetry }: {
   // ★「送っていない」ことを、その場で言う。黙って何も出さないと
   //   「押したのに何も起きなかった」と区別が付かない（台帳 A4-86）。
   if (dx.kind === 'skipped') {
+    // ★QRの見送り（A4-98）だけは、校内の記録が確認できていればそう言い添える。
+    //   校内の記録の見送り（saveFailed 等）には足さない（校内の記録が無いのだから嘘になる）
+    const isQrSkip = dx.why === 'qrStale' || dx.why === 'qrError';
     return (
-      <span className="text-[var(--ink2)]">{DX_SKIP_TEXT[dx.why]}</span>
+      <span className="text-[var(--ink2)]">
+        {DX_SKIP_TEXT[dx.why]}
+        {isQrSkip && schoolConfirmed
+          ? ` 学校の記録はできています。${dx.op === 'in' ? '登校' : '下校'}のやり直しは不要です。`
+          : ''}
+      </span>
     );
   }
   if (dx.kind === 'ok') {

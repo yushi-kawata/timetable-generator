@@ -25,8 +25,11 @@ export type Op = 'in' | 'out';
  *  saveFailed   … 校内の記録が残らなかったことが確定している
  *  saveUnknown  … 校内の記録が残ったかどうか分からない
  *  notConfirmed … 確認したが、校内の記録が見つからなかった
+ *  qrStale      … ★今日のQRが届いていない（前日のQR・日付が無い）。台帳 A4-98
+ *  qrError      … ★QRを取れなかった（通信・窓口が断った）。台帳 A4-98
+ * ★qrStale / qrError は手順（recordFlow / verifyFlow）ではなく、送る直前（runDx）で決まる
  */
-export type DxSkipReason = 'saveFailed' | 'saveUnknown' | 'notConfirmed';
+export type DxSkipReason = 'saveFailed' | 'saveUnknown' | 'notConfirmed' | 'qrStale' | 'qrError';
 
 /**
  * 記録を取り直して確かめた結果。

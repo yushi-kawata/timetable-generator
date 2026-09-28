@@ -97,7 +97,8 @@ test('押し直して直る見込みのあるものには、再試行ボタン�
 //   ★送れなかった（failed）と、そもそも送っていない（skipped）は別物。
 //     ここを同じ言い方にすると、台帳 A4-86 と同じ「何も起きなかったのと
 //     区別が付かない」状態に戻る。
-const ALL_SKIPS = ['saveFailed', 'saveUnknown', 'notConfirmed'];
+// ★2026-09-28（台帳 A4-98 恒久対処(2)）: 今日のQRが無い（qrStale）・QRを読めない（qrError）を足した
+const ALL_SKIPS = ['saveFailed', 'saveUnknown', 'notConfirmed', 'qrStale', 'qrError'];
 
 test('見送りの理由すべてに文言がある', () => {
   assert.deepEqual(Object.keys(DX_SKIP_TEXT).sort(), [...ALL_SKIPS].sort());
@@ -121,5 +122,13 @@ test('見送りの文言は「送っていない」と言い切る（送った�
     for (const banned of DX_BANNED_WORDS) {
       assert.ok(t.indexOf(banned) === -1, `${r} の文言に「${banned}」が入っている`);
     }
+  }
+});
+
+test('★QRが今日のものでないときの文言は、記録のやり直しを促さない（二重登録を招かない・A4-100）', () => {
+  for (const r of ['qrStale', 'qrError']) {
+    const t = DX_SKIP_TEXT[r];
+    assert.ok(t.indexOf('QR') !== -1, `${r}「${t}」が QR の話だと分からない`);
+    assert.ok(!/もう一度記録|記録し直|押し直/.test(t), `${r}「${t}」が記録のやり直しを促している`);
   }
 });

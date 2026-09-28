@@ -43,10 +43,12 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   // QR（別プロジェクトの窓口。GET）
   if (url.includes('action=api')) {
     calls.push('qr');
-    if (qrCase !== 'on') return J({});
+    // ★2026-09-28（A4-98 恒久対処(2)）: stale＝前日のQR／nodate＝日付なし／throw＝通信例外
+    if (qrCase === 'throw') throw new TypeError('Failed to fetch');
+    if (qrCase !== 'on' && qrCase !== 'stale' && qrCase !== 'nodate') return J({});
     const dxUrl = 'https://you-net-dx.jp/yushi/student/pages/entry_commute.php?type=0&studio_id=3&todate=DUMMY';
     return J({
-      campus: '福岡', date: today,
+      campus: '福岡', date: qrCase === 'stale' ? '2026-09-14' : qrCase === 'nodate' ? '' : today,
       tokou_qr: 'data:image/png;base64,DUMMY', gekou_qr: 'data:image/png;base64,DUMMY',
       tokou_url: dxUrl, gekou_url: dxUrl.replace('type=0', 'type=1'),
       updated_at: today + ' 08:30:00',
